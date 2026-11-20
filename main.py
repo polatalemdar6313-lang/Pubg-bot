@@ -9,23 +9,19 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 TOKEN = "9172005481:AAEbc_bAij8pRfdEvcDM9V1egFGzyl9QjaM"
 ADMIN_SIFRE = "631363"
 
-# Bellek Verileri (25 Slot ve Admin/Oda Ayarları)
+# Bellek Verileri (25 Slot)
 toplam_slot = 25
-yuvalar = {i: {"durum": "Boş", "takim": "-", "user_id": None} for i in range(1, toplam_slot + 1)}
+yuvalar = {i: {"durum": "Boş", "takim": "-"} for i in range(1, toplam_slot + 1)}
 kullanici_durumlari = {}
 bilinen_kullanicilar = set()
 
-# Dinamik Ayarlar (Admin panelinden değiştirilebilir)
+# Dinamik Ayarlar
 ayar_kanal_linki = "https://t.me/wexorganizasyon"
 ayar_oda_bilgisi = "Oda bilgisi henüz girilmedi."
 
-# /start komutu
-async def baslangic(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    bilinen_kullanicilar.add(user_id)
-    
+# Slot klavyesini oluşturan yardımcı fonksiyon
+def slot_klavyesi_olustur():
     keyboard = []
-    # 2'li sütunlar halinde butonlar oluşturalım
     satir = []
     for slot_no, bilgi in yuvalar.items():
         if bilgi["durum"] == "Boş":
@@ -39,8 +35,14 @@ async def baslangic(update: Update, context: ContextTypes.DEFAULT_TYPE):
             satir = []
     if satir:
         keyboard.append(satir)
-        
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup(keyboard)
+
+# /start komutu
+async def baslangic(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    bilinen_kullanicilar.add(user_id)
+    
+    reply_markup = slot_klavyesi_olustur()
     await update.message.reply_text(
         "🎮 **PUBG Mobile Turnuvasına Hoş Geldiniz!**\n\nKayıt olmak istediğiniz boş bir slotu seçin:",
         reply_markup=reply_markup,
@@ -58,7 +60,7 @@ async def dugme_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
         slot_no = int(data.split("_")[1])
         
         if yuvalar[slot_no]["durum"] == "Dolu":
-            await query.message.reply_text(f"⚠️ Slot {slot_no} maalesef dolu! Başka bir slot seçiniz.")
+            await query.message.reply_text(f"⚠️ Slot {slot_no} maalesef dolu! Bu slotta '{yuvalar[slot_no]['takim']}' takımı var.")
             return
             
         kullanici_durumlari[user_id] = {"durum": "bekleyen_takim_adi", "yuva": slot_no}
@@ -68,18 +70,21 @@ async def dugme_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     metin = update.message.text
-    
-    # 1. Admin Girişi / Komutları Kontrolü
+    if not metin:
+        return
+    metin = metin.strip()
+
+    # 1. Admin Şifre Kontrolü
     if user_id in kullanici_durumlari and kullanici_durumlari[user_id].get("durum") == "admin_giris":
         if metin == ADMIN_SIFRE:
             kullanici_durumlari[user_id]["durum"] = "admin_paneli"
-            await admin_paneli_goster(update)
+            await update.message.reply_text("👑 **Admin Paneline Başarıyla Giriş Yaptınız!**\n\nKomutlar:\n• `sil [slot_no]` (Örn: `sil 3`)\n• `hepsinisil`\n• `duyuru [mesaj]`\n• `odalink [bilgi]`\n• `kanallink [url]`\n• `cikis`", parse_mode="Markdown")
         else:
             del kullanici_durumlari[user_id]
-            await update.message.reply_text("❌ Hatalı şifre! Admin paneline giriş başarısız.")
+            await update.message.reply_text("❌ Hatalı şifre!")
         return
 
-    # Admin Paneli İşlemleri İçindeyse
+    # 2. Admin Paneli İşlemleri
     if user_id in kullanici_durumlari and kullanici_durumlari[user_id].get("durum") == "admin_paneli":
         komutlar = metin.split(" ", 1)
         islem = komutlar[0].lower()
@@ -88,17 +93,17 @@ async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 s_no = int(komutlar[1])
                 if s_no in yuvalar:
-                    yuvalar[s_no] = {"durum": "Boş", "takim": "-", "user_id": None}
-                    await update.message.reply_text(f"✅ Slot {s_no} başarıyla boşaltıldı.")
+                    yuvalar[s_no] = {"durum": "Boş", "takim": "-"}
+                    await update.message.reply_text(f"✅ Slot {s_no} boşaltıldı.")
                 else:
                     await update.message.reply_text("❌ Geçersiz slot numarası.")
             except ValueError:
-                await update.message.reply_text("❌ Lütfen geçerli bir sayı girin. Örn: `sil 5`", parse_mode="Markdown")
+                await update.message.reply_text("❌ Örnek kullanım: `sil 5`", parse_mode="Markdown")
                 
         elif islem == "hepsinisil":
             for s_no in yuvalar:
-                yuvalar[s_no] = {"durum": "Boş", "takim": "-", "user_id": None}
-            await update.message.reply_text("✅ Tüm slotlar sıfırlandı ve boşaltıldı!")
+                yuvalar[s_no] = {"durum": "Boş", "takim": "-"}
+            await update.message.reply_text("✅ Tüm slotlar sıfırlandı!")
             
         elif islem == "duyuru" and len(komutlar) > 1:
             duyuru_metni = komutlar[1]
@@ -109,12 +114,12 @@ async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     basarili += 1
                 except Exception:
                     pass
-            await update.message.reply_text(f"✅ Duyuru {basarili} kullanıcıya gönderildi.")
+            await update.message.reply_text(f"✅ Duyuru {basarili} kişiye gönderildi.")
             
         elif islem == "odalink" and len(komutlar) > 1:
             global ayar_oda_bilgisi
             ayar_oda_bilgisi = komutlar[1]
-            await update.message.reply_text(f"✅ Oda bilgisi/linki güncellendi:\n{ayar_oda_bilgisi}")
+            await update.message.reply_text(f"✅ Oda bilgisi güncellendi:\n{ayar_oda_bilgisi}")
             
         elif islem == "kanallink" and len(komutlar) > 1:
             global ayar_kanal_linki
@@ -123,55 +128,41 @@ async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         elif islem == "cikis":
             del kullanici_durumlari[user_id]
-            await update.message.reply_text("🚪 Admin panelinden çıkış yapıldı.")
+            await update.message.reply_text("🚪 Admin panelinden çıkıldı.")
         else:
-            await admin_paneli_goster(update)
+            await update.message.reply_text("❌ Bilinmeyen komut. /admin yazarak paneli inceleyebilirsin.")
         return
 
-    # 2. Normal Kullanıcı Takım Adı Kaydı
+    # 3. Normal Kullanıcı Takım Kaydı
     if user_id in kullanici_durumlari and kullanici_durumlari[user_id].get("durum") == "bekleyen_takim_adi":
-        if not metin or metin.startswith("/"):
-            await update.message.reply_text("❌ Takım adı boş bırakılamaz! Lütfen geçerli bir takım adı yazın.")
+        if metin.startswith("/"):
+            await update.message.reply_text("❌ Takım adı komut olamaz! Lütfen geçerli bir takım adı yazın.")
             return
             
         yuva_no = kullanici_durumlari[user_id]["yuva"]
-        yuvalar[yuva_no] = {"durum": "Dolu", "takim": metin, "user_id": user_id}
+        yuvalar[yuva_no] = {"durum": "Dolu", "takim": metin}
         del kullanici_durumlari[user_id]
         
         basari_mesaji = (
             f"🎉 **Tebrikler Başarıyla Kayıt Oldunuz!** 🎉\n\n"
-            f"📌 Slot Numarası: {yuva_no}\n"
-            f"🏆 Takım Adınız: {metin}\n\n"
-            f"🔑 **Oda & Maç Bilgisi:**\n{ayar_oda_bilgisi}\n\n"
-            f"📢 Kanalımıza göz atmayı unutmayın."
+            f"📌 Slot: {yuva_no}\n"
+            f"🏆 Takım: {metin}\n\n"
+            f"🔑 **Oda & Maç Bilgisi:**\n{ayar_oda_bilgisi}"
         )
-        klavye = InlineKeyboardMarkup([[InlineKeyboardButton("📢 Turnuva Kanalına Git", url=ayar_kanal_linki)]])
+        klavye = InlineKeyboardMarkup([[InlineKeyboardButton("📢 Kanalımıza Git", url=ayar_kanal_linki)]])
         await update.message.reply_text(basari_mesaji, reply_markup=klavye, parse_mode="Markdown")
 
 # /admin komutu
-async def admin_giris_komutu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_komutu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     kullanici_durumlari[user_id] = {"durum": "admin_giris"}
     await update.message.reply_text("🔐 Lütfen admin şifresini girin:")
-
-async def admin_paneli_goster(update: Update):
-    panel_mesaji = (
-        "👑 **ADMİN PANELİNE HOŞ GELDİNİZ** 👑\n\n"
-        "İşlem yapmak için aşağıdaki komutları yazabilirsiniz:\n\n"
-        "• `sil [slot_no]` -> Belirli bir slotu boşaltır (Örn: `sil 3`)\n"
-        "• `hepsinisil` -> Tüm slotları tamamen sıfırlar\n"
-        "• `duyuru [mesaj]` -> Botu kullanan herkese bildirim yollar\n"
-        "• `odalink [link/sifre]` -> Oda şifresini/linkini değiştirir\n"
-        "• `kanallink [url]` -> Kanal linkini değiştirir\n"
-        "• `cikis` -> Admin panelinden çıkar"
-    )
-    await update.message.reply_text(panel_mesaji, parse_mode="Markdown")
 
 def main():
     uygulama = Application.builder().token(TOKEN).build()
 
     uygulama.add_handler(CommandHandler("start", baslangic))
-    uygulama.add_handler(CommandHandler("admin", admin_giris_komutu))
+    uygulama.add_handler(CommandHandler("admin", admin_komutu))
     uygulama.add_handler(CallbackQueryHandler(dugme_isleyici))
     uygulama.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mesaj_isleyici))
 
