@@ -230,7 +230,7 @@ async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(basari_mesaji, reply_markup=InlineKeyboardMarkup(klavye), parse_mode="Markdown")
 
 if __name__ == '__main__':
-    TOKEN = "9172005481:AAEbc_bAij8pRfDeCDM9V1egFGzyl9QjaM" # Kendi token'ını buraya yazabilirsin
+    TOKEN = "9172005481:AAEbc_bAij8pRfdEvcDM9V1egFGzyl9QjaM"
     
     uygulama = Application.builder().token(TOKEN).build()
     
