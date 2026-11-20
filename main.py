@@ -1,141 +1,240 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# Bot Loglama Ayarları
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-# 25 Slotluk Turnuva Veri Tabanı
-slots = {i: {"durum": "Boş", "takim": "-", "logo": "-"} for i in range(1, 26)}
+# --- AYARLANACAK KANAL LİNKİ ---
+KANAL_LINKI = "https://t.me/KanalAdiniz"  # Kendi Telegram kanalının linki
 
-# Kullanıcıların geçici durumlarını tutmak için
-user_states = {}
+# Bellek verileri
+yuvalar = {i: {"durum": "Boş", "takim": "-", "logo": "-"} for i in range(1, 26)}
+kullanici_durumlari = {}
+bilinen_kullanicilar = set() # Toplu duyuru göndermek için botu kullananlar
 
-# /start Komutu
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("📋 Turnuva Tablosunu Gör", callback_data="liste")],
-        [InlineKeyboardButton("🎮 Slot Seç / Kayıt Ol", callback_data="kayit_sec")],
-        [InlineKeyboardButton("📢 Admin Kanalı ve Şifreler", callback_data="admin_kanal")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        "🏆 *PUBG Turnuva Kayıt Sistemine Hoş Geldiniz!*\n\n"
-        "Aşağıdaki menüyü kullanarak slot seçebilir veya güncel tabloyu inceleyebilirsiniz.",
-        reply_markup=reply_markup,
-        parse_mode="Markdown"
+async def baslangic(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    bilinen_kullanicilar.add(user_id)
+    
+    if user_id in kullanici_durumlari:
+        del kullanici_durumlari[user_id]
+    
+    dolu_sayisi = sum(1 for y in yuvalar.values() if y["durum"] == "Dolu")
+    
+    metin = (
+        f"🏆 **WEXevent PUBG Turnuva Slot Sistemi** 🏆\n\n"
+        f"Toplam Slot: 25\n"
+        f"🔴 Dolu: {dolu_sayisi} | 🟢 Boş: {25 - dolu_sayisi}\n\n"
+        f"Lütfen yapmak istediğiniz işlemi seçin:"
     )
-# Buton Yönlendirmeleri
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    
+    klavye = [
+        [InlineKeyboardButton("📋 Turnuva Tablosunu Gör (Slotlar)", callback_data="liste")],
+        [InlineKeyboardButton("🎯 Slot Seç / Kayıt Ol", callback_data="kayit_sec")],
+        [InlineKeyboardButton("📢 Admin Kanalı ve Oda Bilgileri", url=KANAL_LINKI)],
+        [InlineKeyboardButton("🛠️ Yönetici Paneli (Admin)", callback_data="admin_giris")]
+    ]
+    
+    await update.message.reply_text(metin, reply_markup=InlineKeyboardMarkup(klavye), parse_mode="Markdown")
+
+async def dugme_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    veri = query.data
     user_id = query.from_user.id
-    data = query.data
 
-    if data == "liste":
-        text = "📊 *GÜNCEL TURNUVA TABLOSU*\n\n"
-        for n, b in slots.items():
-            if b["durum"] == "Boş":
-                text += f"Slot {n:2d}: [BOŞ]\n"
-            else:
-                if b["logo"] == "-":
-                    text += f"Slot {n:2d}: [DOLU] | {b['takim']}\n"
-                else:
-                    text += f"Slot {n:2d}: [DOLU] | {b['takim']} | Logo: {b['logo']}\n"
+    if veri == "ana_menu":
+        if user_id in kullanici_durumlari:
+            del kullanici_durumlari[user_id]
         
-        keyboard = [[InlineKeyboardButton("🔙 Ana Menü", callback_data="ana_menu")]]
-        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-
-    elif data == "kayit_sec":
-        user_states[user_id] = "waiting_slot"
-        await query.edit_message_text(
-            "📝 Lütfen kayıt olmak istediğiniz **Slot Numarasını (1-25 arası)** rakam olarak yazıp gönderin:"
+        dolu_sayisi = sum(1 for y in yuvalar.values() if y["durum"] == "Dolu")
+        metin = (
+            f"🏆 **WEXevent PUBG Turnuva Slot Sistemi** 🏆\n\n"
+            f"Toplam Slot: 25\n"
+            f"🔴 Dolu: {dolu_sayisi} | 🟢 Boş: {25 - dolu_sayisi}\n\n"
+            f"Lütfen yapmak istediğiniz işlemi seçin:"
         )
-
-    elif data == "admin_kanal":
-        text = (
-            "📢 *ADMIN KANALI VE ODA BİLGİLERİ*\n\n"
-            "Tüm kayıtlar tamamlandıktan sonra oda ID ve şifreler aşağıdaki kanalda paylaşılacaktır:\n\n"
-            "🔗 [Admin Duyuru Kanalı Linki](https://t.me/ornek_kanal_linki)"
-        )
-        keyboard = [[InlineKeyboardButton("🔙 Ana Menü", callback_data="ana_menu")]]
-        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown", disable_web_page_preview=True)
-
-    elif data == "ana_menu":
-        if user_id in user_states:
-            del user_states[user_id]
-        keyboard = [
-            [InlineKeyboardButton("📋 Turnuva Tablosunu Gör", callback_data="liste")],
-            [InlineKeyboardButton("🎮 Slot Seç / Kayıt Ol", callback_data="kayit_sec")],
-            [InlineKeyboardButton("📢 Admin Kanalı ve Şifreler", callback_data="admin_kanal")]
+        klavye = [
+            [InlineKeyboardButton("📋 Turnuva Tablosunu Gör (Slotlar)", callback_data="liste")],
+            [InlineKeyboardButton("🎯 Slot Seç / Kayıt Ol", callback_data="kayit_sec")],
+            [InlineKeyboardButton("📢 Admin Kanalı ve Oda Bilgileri", url=KANAL_LINKI)],
+            [InlineKeyboardButton("🛠️ Yönetici Paneli (Admin)", callback_data="admin_giris")]
         ]
-        await query.edit_message_text(
-            "🏆 *Ana Menü:*\nİstediğiniz işlemi seçin:",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
-# Metin Mesajlarını Yönetme
-async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    text = update.message.text.strip()
+        await query.message.edit_text(metin, reply_markup=InlineKeyboardMarkup(klavye), parse_mode="Markdown")
 
-    if user_id not in user_states:
+    elif veri == "liste":
+        liste_metni = "📋 **25 Slotluk Turnuva Tablosu**\n\n"
+        for i in range(1, 26):
+            y = yuvalar[i]
+            if y["durum"] == "Boş":
+                liste_metni += f"Slot {i}: 🟢 **BOŞ**\n"
+            else:
+                liste_metni += f"Slot {i}: 🔴 **DOLU** — 🏷️ {y['takim']} | 🎨 {y['logo']}\n"
+        
+        klavye = [[InlineKeyboardButton("🔙 Ana Menü", callback_data="ana_menu")]]
+        await query.message.edit_text(liste_metni, reply_markup=InlineKeyboardMarkup(klavye), parse_mode="Markdown")
+
+    elif veri == "kayit_sec":
+        bos_slotlar = [str(i) for i in range(1, 26) if yuvalar[i]["durum"] == "Boş"]
+        if not bos_slotlar:
+            await query.message.edit_text("⚠️ Üzgünüz, tüm slotlar dolmuş durumda!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ana Menü", callback_data="ana_menu")]]))
+            return
+        
+        kullanici_durumlari[user_id] = {"durum": "bekleyen_yuva"}
+        await query.message.edit_text(
+            "🎯 Lütfen 1 ile 25 arasında **boş olan** bir slot numarası yazın (Örn: 5):",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 İptal / Ana Menü", callback_data="ana_menu")]])
+        )
+
+    elif veri == "admin_giris":
+        kullanici_durumlari[user_id] = {"durum": "bekleyen_admin_sifre"}
+        await query.message.edit_text(
+            "🔐 Yönetici paneline erişmek için lütfen **6 haneli admin şifresini** (`631363`) girin:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 İptal / Ana Menü", callback_data="ana_menu")]])
+        )
+
+    elif veri == "admin_panel":
+        klavye = [
+            [InlineKeyboardButton("📢 Herkese Duyuru / Açıklama Yaz", callback_data="admin_duyuru_yaz")],
+            [InlineKeyboardButton("🗑️ Bir Slotu Boşalt", callback_data="admin_slot_bosalt")],
+            [InlineKeyboardButton("🔄 Tüm Slotları Sıfırla", callback_data="admin_sifirla")],
+            [InlineKeyboardButton("🔙 Ana Menü", callback_data="ana_menu")]
+        ]
+        await query.message.edit_text("🛠️ **Yönetici Paneli**\n\nYapmak istediğiniz yönetici işlemini seçin:", reply_markup=InlineKeyboardMarkup(klavye), parse_mode="Markdown")
+
+    elif veri == "admin_duyuru_yaz":
+        kullanici_durumlari[user_id] = {"durum": "bekleyen_admin_duyuru_metni"}
+        await query.message.edit_text(
+            "📢 Kullanıcılara göndermek istediğiniz **açıklama / duyuru metnini** yazıp gönderin:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 İptal", callback_data="admin_panel")]])
+        )
+
+    elif veri == "admin_sifirla":
+        for i in range(1, 26):
+            yuvalar[i] = {"durum": "Boş", "takim": "-", "logo": "-"}
+        await query.message.edit_text(
+            "✅ Tüm 25 slot başarıyla sıfırlandı ve boşaltıldı!",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛠️ Admin Panele Dön", callback_data="admin_panel"), InlineKeyboardButton("🔙 Ana Menü", callback_data="ana_menu")]])
+        )
+
+    elif veri == "admin_slot_bosalt":
+        kullanici_durumlari[user_id] = {"durum": "bekleyen_admin_bosalt"}
+        await query.message.edit_text(
+            "🗑️ Boşaltmak istediğiniz slot numarasını yazın (Örn: 3):",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 İptal", callback_data="admin_panel")]])
+        )
+
+async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    bilinen_kullanicilar.add(user_id)
+    metin = update.message.text.strip()
+
+    if user_id not in kullanici_durumlari:
         return
 
-    state = user_states[user_id]
+    durum_bilgisi = kullanici_durumlari[user_id]
+    durum = durum_bilgisi.get("durum")
 
-    if state == "waiting_slot":
-        try:
-            slot_no = int(text)
-            if slot_no < 1 or slot_no > 25:
-                await update.message.reply_text("❌ Hata: Lütfen 1 ile 25 arasında geçerli bir slot numarası girin.")
-                return
+    # 1. Admin Şifre Kontrolü
+    if durum == "bekleyen_admin_sifre":
+        if metin == "631363":
+            del kullanici_durumlari[user_id]
+            klavye = [
+                [InlineKeyboardButton("📢 Herkese Duyuru / Açıklama Yaz", callback_data="admin_duyuru_yaz")],
+                [InlineKeyboardButton("🗑️ Bir Slotu Boşalt", callback_data="admin_slot_bosalt")],
+                [InlineKeyboardButton("🔄 Tüm Slotları Sıfırla", callback_data="admin_sifirla")],
+                [InlineKeyboardButton("🔙 Ana Menü", callback_data="ana_menu")]
+            ]
+            await update.message.reply_text("✅ Şifre Doğru! Yönetici paneline hoş geldiniz.", reply_markup=InlineKeyboardMarkup(klavye))
+        else:
+            await update.message.reply_text("❌ Hatalı şifre! Lütfen doğru şifreyi girin veya /start yazarak ana menüye dönün.")
 
-            if slots[slot_no]["durum"] == "Dolu":
-                await update.message.reply_text(f"⚠️ Slot {slot_no} maalesef dolu! Lütfen başka bir slot numarası yazın:")
-                return
-
-            user_states[user_id] = {"state": "waiting_team_name", "slot": slot_no}
-            await update.message.reply_text(f"✅ Slot {slot_no} seçildi.\n\nŞimdi lütfen *Takım Adınızı* yazın (Zorunlu):", parse_mode="Markdown")
+    # 2. Toplu Duyuru Gönderme İşlemi
+    elif durum == "bekleyen_admin_duyuru_metni":
+        del kullanici_durumlari[user_id]
+        duyuru_metni = f"📢 **TURNUVA DUYURUSU / AÇIKLAMA** 📢\n\n{metin}"
         
+        gonderim_sayisi = 0
+        for kid in bilinen_kullanicilar:
+            try:
+                await context.bot.send_message(chat_id=kid, text=duyuru_metni, parse_mode="Markdown")
+                gonderim_sayisi += 1
+            except Exception:
+                pass
+        
+        klavye = [
+            [InlineKeyboardButton("🛠️ Yönetici Paneli", callback_data="admin_panel")],
+            [InlineKeyboardButton("🔙 Ana Menü", callback_data="ana_menu")]
+        ]
+        await update.message.reply_text(f"✅ Duyuru başarıyla {gonderim_sayisi} kullanıcıya gönderildi!", reply_markup=InlineKeyboardMarkup(klavye))
+
+    # 3. Admin Slot Boşaltma
+    elif durum == "bekleyen_admin_bosalt":
+        try:
+            slot_no = int(metin)
+            if 1 <= slot_no <= 25:
+                yuvalar[slot_no] = {"durum": "Boş", "takim": "-", "logo": "-"}
+                del kullanici_durumlari[user_id]
+                await update.message.reply_text(f"✅ Slot {slot_no} başarıyla boşaltıldı!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛠️ Yönetici Paneli", callback_data="admin_panel"), InlineKeyboardButton("🔙 Ana Menü", callback_data="ana_menu")]]))
+            else:
+                await update.message.reply_text("❌ Lütfen 1 ile 25 arasında geçerli bir slot numarası girin:")
         except ValueError:
             await update.message.reply_text("❌ Hata: Lütfen geçerli bir sayı girin (Örn: 5).")
 
-    elif isinstance(state, dict) and state.get("state") == "waiting_team_name":
-        if not text:
-            await update.message.reply_text("❌ Takım adı boş bırakılamaz! Lütfen takım adını yazın:")
+    # 4. Normal Kullanıcı Slot Seçimi
+    elif durum == "bekleyen_yuva":
+        try:
+            yuva_no = int(metin)
+            if not (1 <= yuva_no <= 25):
+                await update.message.reply_text("❌ Hata: Lütfen 1 ile 25 arasında geçerli bir slot numarası girin:")
+                return
+            
+            if yuvalar[yuva_no]["durum"] == "Dolu":
+                await update.message.reply_text(f"⚠️ Bu slot ({yuva_no}) maalesef dolu! Lütfen başka bir slot seçin:")
+                return
+            
+            kullanici_durumlari[user_id] = {"durum": "bekleyen_takim_adi", "yuva": yuva_no}
+            await update.message.reply_text(f"✅ Slot {yuva_no} seçildi.\n\nLütfen **Takım Adınızı** yazın:")
+        except ValueError:
+            await update.message.reply_text("❌ Hata: Lütfen geçerli bir sayı girin (Örn: 5).")
+
+    # 5. Takım Adı Alma
+    elif durum == "bekleyen_takim_adi":
+        if not metin:
+            await update.message.reply_text("❌ Takım adı boş bırakılamaz! Lütfen takım adınızı yazın:")
             return
         
-        slot_no = state["slot"]
-        user_states[user_id] = {"state": "waiting_logo", "slot": slot_no, "team_name": text}
-        await update.message.reply_text("✨ Takım adı alındı.\n\nİstiyorsorsanız *Logo/Sembol* yazın (Geçmek için `-` yazabilirsiniz):")
+        yuva_no = durum_bilgisi["yuva"]
+        kullanici_durumlari[user_id] = {"durum": "bekleyen_logo", "yuva": yuva_no, "takim_adi": metin}
+        await update.message.reply_text("🎨 Takım adı alındı.\n\nİstiyorsanız **Logo/Sembol** yazın (Geçmek istemiyorsanız `-` yazabilirsiniz):")
 
-    elif isinstance(state, dict) and state.get("state") == "waiting_logo":
-        slot_no = state["slot"]
-        team_name = state["team_name"]
-        logo = text if text != "-" else "-"
+    # 6. Logo Alma ve Kaydı Tamamlama
+    elif durum == "bekleyen_logo":
+        yuva_no = durum_bilgisi["yuva"]
+        takim_adi = durum_bilgisi["takim_adi"]
+        logo = metin if metin != "-" else "Logosuz"
 
-        slots[slot_no] = {"durum": "Dolu", "takim": team_name, "logo": logo}
-        del user_states[user_id]
+        yuvalar[yuva_no] = {"durum": "Dolu", "takim": takim_adi, "logo": logo}
+        del kullanici_durumlari[user_id]
 
-        await update.message.reply_text(
-            f"🎉 *Tebrikler Başarıyla Kayıt Oldunuz!*\n\n"
-            f"📌 Slot: {slot_no}\n"
-            f"🛡️ Takım: {team_name}\n"
+        basari_mesaji = (
+            f"🎉 **Tebrikler Başarıyla Kayıt Oldunuz!** 🎉\n\n"
+            f"📍 Slot: {yuva_no}\n"
+            f"🏷️ Takım: {takim_adi}\n"
             f"🎨 Logo: {logo}\n\n"
-            f"Tabloyu görmek için /start yazabilirsiniz.",
-            parse_mode="Markdown"
+            f"Tabloyu görmek için /start yazabilirsiniz."
         )
+        klavye = [[InlineKeyboardButton("📢 Admin Kanalına Git", url=KANAL_LINKI)], [InlineKeyboardButton("🔙 Ana Menü", callback_data="ana_menu")]]
+        await update.message.reply_text(basari_mesaji, reply_markup=InlineKeyboardMarkup(klavye), parse_mode="Markdown")
 
-# Botu Başlatma Ana Bloğu
 if __name__ == '__main__':
-    TOKEN = "9172005481:AAEbc_bAij8pRfdEvcDM9V1egFGzyl9QjaM"
+    TOKEN = "9172005481:AAEbc_bAij8pRfDeCDM9V1egFGzyl9QjaM" # Kendi token'ını buraya yazabilirsin
     
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), message_handler))
-
+    uygulama = Application.builder().token(TOKEN).build()
+    
+    uygulama.add_handler(CommandHandler("start", baslangic))
+    uygulama.add_handler(CallbackQueryHandler(dugme_isleyici))
+    uygulama.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mesaj_isleyici))
+    
     print("Bot aktif ve çalışıyor...")
-    app.run_polling()
+    uygulama.run_polling()
