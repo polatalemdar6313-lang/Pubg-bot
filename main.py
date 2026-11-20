@@ -5,7 +5,8 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 # --- AYARLANACAK KANAL LİNKİ ---
-KANAL_LINKI = "@WEXevent_bot.
+KANAL_LINKI = "@WEXevent_bot."
+https://t.me/wexorganizasyon"
 https://t.me/wexorganizasyon"
 
 # Bellek verileri
