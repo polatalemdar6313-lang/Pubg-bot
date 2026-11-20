@@ -2,24 +2,19 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# Loglama ayarları
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-# --- AYARLAR ---
 TOKEN = "9172005481:AAEbc_bAij8pRfdEvcDM9V1egFGzyl9QjaM"
 ADMIN_SIFRE = "631363"
 
-# Bellek Verileri (25 Slot)
 toplam_slot = 25
 yuvalar = {i: {"durum": "Boş", "takim": "-"} for i in range(1, toplam_slot + 1)}
 kullanici_durumlari = {}
 bilinen_kullanicilar = set()
 
-# Dinamik Ayarlar
 ayar_kanal_linki = "https://t.me/wexorganizasyon"
 ayar_oda_bilgisi = "Oda bilgisi henüz girilmedi."
 
-# Slot klavyesini oluşturan yardımcı fonksiyon
 def slot_klavyesi_olustur():
     keyboard = []
     satir = []
@@ -37,7 +32,6 @@ def slot_klavyesi_olustur():
         keyboard.append(satir)
     return InlineKeyboardMarkup(keyboard)
 
-# /start komutu
 async def baslangic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     bilinen_kullanicilar.add(user_id)
@@ -49,7 +43,6 @@ async def baslangic(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# Buton tıklama yönetimi
 async def dugme_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -66,7 +59,6 @@ async def dugme_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kullanici_durumlari[user_id] = {"durum": "bekleyen_takim_adi", "yuva": slot_no}
         await query.message.reply_text(f"✅ Slot {slot_no} seçildi.\n\nLütfen **takım adınızı** yazıp gönderin (Zorunludur):")
 
-# Metin mesajı ve Admin Paneli yönetimi
 async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     metin = update.message.text
@@ -74,11 +66,27 @@ async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     metin = metin.strip()
 
+    # Direkt "admin" veya "/admin" yazılırsa şifre iste
+    if metin.lower() in ["admin", "/admin"]:
+        kullanici_durumlari[user_id] = {"durum": "admin_giris"}
+        await update.message.reply_text("🔐 Lütfen admin şifresini girin:")
+        return
+
     # 1. Admin Şifre Kontrolü
     if user_id in kullanici_durumlari and kullanici_durumlari[user_id].get("durum") == "admin_giris":
         if metin == ADMIN_SIFRE:
             kullanici_durumlari[user_id]["durum"] = "admin_paneli"
-            await update.message.reply_text("👑 **Admin Paneline Başarıyla Giriş Yaptınız!**\n\nKomutlar:\n• `sil [slot_no]` (Örn: `sil 3`)\n• `hepsinisil`\n• `duyuru [mesaj]`\n• `odalink [bilgi]`\n• `kanallink [url]`\n• `cikis`", parse_mode="Markdown")
+            await update.message.reply_text(
+                "👑 **Admin Paneline Başarıyla Giriş Yaptınız!**\n\n"
+                "Komutlar:\n"
+                "• `sil [slot_no]` (Örn: `sil 3`)\n"
+                "• `hepsinisil` -> Tüm slotları boşaltır\n"
+                "• `duyuru [mesaj]` -> Herkese bildirim atar\n"
+                "• `odalink [bilgi]` -> Oda şifresini değiştirir\n"
+                "• `kanallink [url]` -> Kanal linkini değiştirir\n"
+                "• `cikis` -> Panelden çıkar",
+                parse_mode="Markdown"
+            )
         else:
             del kullanici_durumlari[user_id]
             await update.message.reply_text("❌ Hatalı şifre!")
@@ -98,7 +106,7 @@ async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await update.message.reply_text("❌ Geçersiz slot numarası.")
             except ValueError:
-                await update.message.reply_text("❌ Örnek kullanım: `sil 5`", parse_mode="Markdown")
+                await update.message.reply_text("❌ Örnek: `sil 5`", parse_mode="Markdown")
                 
         elif islem == "hepsinisil":
             for s_no in yuvalar:
@@ -130,13 +138,13 @@ async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del kullanici_durumlari[user_id]
             await update.message.reply_text("🚪 Admin panelinden çıkıldı.")
         else:
-            await update.message.reply_text("❌ Bilinmeyen komut. /admin yazarak paneli inceleyebilirsin.")
+            await update.message.reply_text("❌ Bilinmeyen komut.")
         return
 
     # 3. Normal Kullanıcı Takım Kaydı
     if user_id in kullanici_durumlari and kullanici_durumlari[user_id].get("durum") == "bekleyen_takim_adi":
         if metin.startswith("/"):
-            await update.message.reply_text("❌ Takım adı komut olamaz! Lütfen geçerli bir takım adı yazın.")
+            await update.message.reply_text("❌ Takım adı komut olamaz! Lütfen takım adını yazın.")
             return
             
         yuva_no = kullanici_durumlari[user_id]["yuva"]
@@ -152,17 +160,11 @@ async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
         klavye = InlineKeyboardMarkup([[InlineKeyboardButton("📢 Kanalımıza Git", url=ayar_kanal_linki)]])
         await update.message.reply_text(basari_mesaji, reply_markup=klavye, parse_mode="Markdown")
 
-# /admin komutu
-async def admin_komutu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    kullanici_durumlari[user_id] = {"durum": "admin_giris"}
-    await update.message.reply_text("🔐 Lütfen admin şifresini girin:")
-
 def main():
     uygulama = Application.builder().token(TOKEN).build()
 
     uygulama.add_handler(CommandHandler("start", baslangic))
-    uygulama.add_handler(CommandHandler("admin", admin_komutu))
+    uygulama.add_handler(CommandHandler("admin", lambda u, c: c.bot.send_message(u.effective_chat.id, "🔐 Lütfen admin şifresini girin:")))
     uygulama.add_handler(CallbackQueryHandler(dugme_isleyici))
     uygulama.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mesaj_isleyici))
 
