@@ -6,8 +6,8 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # --- AYARLANACAK KANAL LİNKİ ---
 KANAL_LINKI = "@WEXevent_bot."
-https://t.me/wexorganizasyon"
-https://t.me/wexorganizasyon"
+#https://t.me/wexorganizasyon"
+#https://t.me/wexorganizasyon"
 
 # Bellek verileri
 yuvalar = {i: {"durum": "Boş", "takim": "-", "logo": "-"} for i in range(1, 26)}
