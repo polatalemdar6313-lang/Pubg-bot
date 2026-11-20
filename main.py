@@ -129,7 +129,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Botu Başlatma Ana Bloğu
 if __name__ == '__main__':
-    TOKEN = "9172005481:AAEbc_bAij8pRfdEvcDM9V1egFGzyl9QjaM
+    TOKEN = "9172005481:AAEbc_bAij8pRfdEvcDM9V1egFGzyl9QjaM"
     
     app = ApplicationBuilder().token(TOKEN).build()
 
