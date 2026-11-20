@@ -11,22 +11,21 @@ toplam_slot = 25
 yuvalar = {i: {"durum": "Boş", "takim": "-", "user_id": None} for i in range(1, toplam_slot + 1)}
 kullanici_durumlari = {}
 bilinen_kullanicilar = set()
+admin_bildirimleri = []
 
 ayar_kanal_linki = "https://t.me/wexorganizasyon"
 ayar_oda_bilgisi = "Oda bilgisi henüz girilmedi."
 ayar_geri_sayim = "Yarın Akşam 20:00"
 
-# Ana Menü (Start Menüsü)
 def ana_menu_klavyesi():
     keyboard = [
-        [InlineKeyboardButton("📋 Slot Tablosu (Durum Göster)", callback_data="menu_slot_tablosu")],
+        [InlineKeyboardButton("📋 Slot Tablosu", callback_data="menu_slot_tablosu")],
         [InlineKeyboardButton("🎮 Turnuvaya Kayıt Ol / Slot Seç", callback_data="menu_slot_sec")],
-        [InlineKeyboardButton("⚠️ Kayıt İptal Et", callback_data="menu_iptal")],
-        [InlineKeyboardButton("👑 Admin Paneli", callback_data="menu_admin_giris")]
+        [InlineKeyboardButton("📩 Admine Bildirim Gönder", callback_data="menu_bildirim_gonder")],
+        [InlineKeyboardButton("⚠️ Kayıt İptal Et", callback_data="menu_iptal")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# Slot Tablosu / Seçim Klavyesi
 def slot_klavyesi_olustur():
     keyboard = []
     satir = []
@@ -45,28 +44,30 @@ def slot_klavyesi_olustur():
     keyboard.append([InlineKeyboardButton("🔙 Ana Menüye Dön", callback_data="menu_ana_sayfa")])
     return InlineKeyboardMarkup(keyboard)
 
-# Tamamen Butonlu Admin Paneli Klavyesi
 def admin_paneli_klavyesi():
     keyboard = [
-        [InlineKeyboardButton("🗑️ Tek Slot Sil (Numara Seç)", callback_data="adm_sil_sec")],
-        [InlineKeyboardButton("🚨 Tüm Slotları Boşalt (Hepsini Sil)", callback_data="adm_hepsinisil")],
+        [InlineKeyboardButton("🗑️ Tek Slot Sil", callback_data="adm_sil_sec")],
+        [InlineKeyboardButton("🚨 Tüm Slotları Boşalt", callback_data="adm_hepsinisil")],
+        [InlineKeyboardButton("📥 Gelen Bildirimleri Oku", callback_data="adm_bildirimleri_oku")],
         [InlineKeyboardButton("📢 Herkese Duyuru Gönder", callback_data="adm_duyuru_iste")],
         [InlineKeyboardButton("🔑 Oda Bilgisini Değiştir", callback_data="adm_odalink_iste")],
         [InlineKeyboardButton("⏳ Geri Sayım Süresini Ayarla", callback_data="adm_sure_iste")],
-        [InlineKeyboardButton("🚪 Admin Panelinden Çık", callback_data="adm_cikis")]
+        [InlineKeyboardButton("🚪 Admin Panelinden Çık", callback_data="menu_ana_sayfa")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# /start komutu
 async def baslangic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     bilinen_kullanicilar.add(user_id)
     
+    if user_id in kullanici_durumlari:
+        del kullanici_durumlari[user_id]
+    
     mesaj = (
         f"🎮 **PUBG Mobile Turnuvasına Hoş Geldiniz!**\n\n"
-        f"⏳ **Turnuva / Geri Sayım:** {ayar_geri_sayim}\n"
+        f"⏳ **Geri Sayım:** {ayar_geri_sayim}\n"
         f"📢 **Kanal:** {ayar_kanal_linki}\n\n"
-        f"Lütfen yapmak istediğiniz işlemi aşağıdaki butonlardan seçin:"
+        f"Lütfen yapmak istediğiniz işlemi seçin:"
     )
     
     if update.callback_query:
@@ -74,21 +75,21 @@ async def baslangic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(mesaj, reply_markup=ana_menu_klavyesi(), parse_mode="Markdown")
 
-# Buton Tıklama Yöneticisi
 async def dugme_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
     data = query.data
     
-    # Ana Menü Yönlendirmeleri
     if data == "menu_ana_sayfa":
+        if user_id in kullanici_durumlari:
+            del kullanici_durumlari[user_id]
         await baslangic(update, context)
         return
         
     elif data == "menu_slot_tablosu":
         await query.message.edit_text(
-            f"📋 **Güncel Slot Tablosu:**\n⏳ Başlangıç: {ayar_geri_sayim}\nKırmızı dolu slotlarda takım adları yazar.",
+            f"📋 **Güncel Slot Tablosu:**\nKırmızı dolu slotlarda takımların adları yazar.",
             reply_markup=slot_klavyesi_olustur(),
             parse_mode="Markdown"
         )
@@ -100,6 +101,11 @@ async def dugme_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=slot_klavyesi_olustur(),
             parse_mode="Markdown"
         )
+        return
+        
+    elif data == "menu_bildirim_gonder":
+        kullanici_durumlari[user_id] = {"durum": "kullanici_bildirim_bekliyor"}
+        await query.message.reply_text("📩 Admine göndermek istediğiniz mesajı yazıp gönderin:")
         return
         
     elif data == "menu_iptal":
@@ -114,27 +120,23 @@ async def dugme_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.message.edit_text("⚠️ Aktif bir slot kaydınız bulunmuyor.", reply_markup=ana_menu_klavyesi())
         return
-        
-    elif data == "menu_admin_giris":
-        kullanici_durumlari[user_id] = {"durum": "admin_giris"}
-        await query.message.reply_text("🔐 Lütfen admin şifresini (`631363`) sohbet kısmına yazarak gönderin:")
-        return
 
-    # Admin Buton İşlemleri
     if data.startswith("adm_"):
         if data == "adm_hepsinisil":
             for s_no in yuvalar:
                 yuvalar[s_no] = {"durum": "Boş", "takim": "-", "user_id": None}
             await query.message.edit_text("✅ Tüm slotlar başarıyla sıfırlandı!", reply_markup=admin_paneli_klavyesi())
             
-        elif data == "adm_cikis":
-            if user_id in kullanici_durumlari:
-                del kullanici_durumlari[user_id]
-            await query.message.edit_text("🚪 Admin panelinden çıkış yapıldı.", reply_markup=ana_menu_klavyesi())
-            
         elif data == "adm_sil_sec":
             kullanici_durumlari[user_id] = {"durum": "admin_sil_bekliyor"}
-            await query.message.reply_text("🗑️ Hangi slotu silmek istiyorsanız numarasını yazın (Örn: `5`):")
+            await query.message.reply_text("🗑️ Silmek istediğiniz slot numarasını yazın (Örn: `5`):")
+            
+        elif data == "adm_bildirimleri_oku":
+            if not admin_bildirimleri:
+                await query.message.edit_text("📥 Henüz gelen yeni bir bildirim yok.", reply_markup=admin_paneli_klavyesi())
+            else:
+                liste = "📥 **Gelen Bildirimler:**\n\n" + "\n".join([f"• {b}" for b in admin_bildirimleri])
+                await query.message.edit_text(liste, reply_markup=admin_paneli_klavyesi(), parse_mode="Markdown")
             
         elif data == "adm_duyuru_iste":
             kullanici_durumlari[user_id] = {"durum": "admin_duyuru_bekliyor"}
@@ -146,10 +148,9 @@ async def dugme_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         elif data == "adm_sure_iste":
             kullanici_durumlari[user_id] = {"durum": "admin_sure_bekliyor"}
-            await query.message.reply_text("⏳ Yeni turnuva süresini / geri sayımı yazın (Örn: `Yarın 21:00`):")
+            await query.message.reply_text("⏳ Yeni geri sayım süresini yazın (Örn: `Yarın 21:00`):")
         return
 
-    # Slot Seçim İşlemi
     if data.startswith("slot_"):
         slot_no = int(data.split("_")[1])
         if yuvalar[slot_no]["durum"] == "Dolu":
@@ -159,7 +160,6 @@ async def dugme_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kullanici_durumlari[user_id] = {"durum": "bekleyen_takim_adi", "yuva": slot_no}
         await query.message.reply_text(f"✅ Slot {slot_no} seçildi.\n\nLütfen **takım adınızı** yazıp gönderin:")
 
-# Mesaj ve Admin Panel Durum Yönetimi
 async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     metin = update.message.text
@@ -167,7 +167,17 @@ async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     metin = metin.strip()
 
-    # Admin Şifre Kontrolü
+    if metin.lower() in ["admin", "/admin"]:
+        kullanici_durumlari[user_id] = {"durum": "admin_giris"}
+        await update.message.reply_text("🔐 Lütfen admin şifresini girin:")
+        return
+
+    if user_id in kullanici_durumlari and kullanici_durumlari[user_id].get("durum") == "kullanici_bildirim_bekliyor":
+        admin_bildirimleri.append(f"Kullanıcı ID {user_id}: {metin}")
+        del kullanici_durumlari[user_id]
+        await update.message.reply_text("✅ Mesajınız başarıyla admine iletildi!", reply_markup=ana_menu_klavyesi())
+        return
+
     if user_id in kullanici_durumlari and kullanici_durumlari[user_id].get("durum") == "admin_giris":
         if metin == ADMIN_SIFRE:
             kullanici_durumlari[user_id]["durum"] = "admin_paneli"
@@ -180,26 +190,10 @@ async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Hatalı şifre!")
         return
 
-    # Admin Özel Durum Girişleri (Silme, Duyuru, Süre vb.)
-    if user_id in kullanici_durumlari and kullanici_durumlari[user_id].get("durum") == "admin_paneli":
-        durum_tipi = kullanici_durumlari[user_id].get("alt_durum")
-        
-        if durum_tipi == "sil":
-            try:
-                s_no = int(metin)
-                if s_no in yuvalar:
-                    yuvalar[s_no] = {"durum": "Boş", "takim": "-", "user_id": None}
-                    await update.message.reply_text(f"✅ Slot {s_no} boşaltıldı.", reply_markup=admin_paneli_klavyesi())
-                else:
-                    await update.message.reply_text("❌ Geçersiz slot numarası.", reply_markup=admin_paneli_klavyesi())
-            except ValueError:
-                await update.message.reply_text("❌ Lütfen sadece sayı girin (Örn: 3)", reply_markup=admin_paneli_klavyesi())
-            kullanici_durumlari[user_id]["alt_durum"] = None
-            return
-
-    # Admin Alt Komut Beklemeleri
-    if user_id in kullanici_durumlari:
-        durum = kullanici_durumlari[user_id].get("durum")
+    if user_id in kullanici_durumlari and kullanici_durumlari[user_id].get("durum") in [
+        "admin_sil_bekliyor", "admin_duyuru_bekliyor", "admin_odalink_bekliyor", "admin_sure_bekliyor"
+    ]:
+        durum = kullanici_durumlari[user_id]["durum"]
         
         if durum == "admin_sil_bekliyor":
             try:
@@ -208,9 +202,9 @@ async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     yuvalar[s_no] = {"durum": "Boş", "takim": "-", "user_id": None}
                     await update.message.reply_text(f"✅ Slot {s_no} başarıyla silindi ve boşaltıldı!", reply_markup=admin_paneli_klavyesi())
                 else:
-                    await update.message.reply_text("❌ Böyle bir slot bulunmuyor.", reply_markup=admin_paneli_klavyesi())
+                    await update.message.reply_text("❌ Geçersiz slot numarası.", reply_markup=admin_paneli_klavyesi())
             except ValueError:
-                await update.message.reply_text("❌ Geçerli bir sayı giriniz.", reply_markup=admin_paneli_klavyesi())
+                await update.message.reply_text("❌ Lütfen geçerli bir sayı girin.", reply_markup=admin_paneli_klavyesi())
             kullanici_durumlari[user_id]["durum"] = "admin_paneli"
             return
             
@@ -236,11 +230,10 @@ async def mesaj_isleyici(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif durum == "admin_sure_bekliyor":
             global ayar_geri_sayim
             ayar_geri_sayim = metin
-            await update.message.reply_text(f"✅ Turnuva geri sayım süresi güncellendi:\n{ayar_geri_sayim}", reply_markup=admin_paneli_klavyesi())
+            await update.message.reply_text(f"✅ Geri sayım süresi güncellendi:\n{ayar_geri_sayim}", reply_markup=admin_paneli_klavyesi())
             kullanici_durumlari[user_id]["durum"] = "admin_paneli"
             return
 
-    # Normal Kullanıcı Takım Kaydı
     if user_id in kullanici_durumlari and kullanici_durumlari[user_id].get("durum") == "bekleyen_takim_adi":
         if metin.startswith("/"):
             await update.message.reply_text("❌ Takım adı komut olamaz!")
