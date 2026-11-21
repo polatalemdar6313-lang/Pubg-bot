@@ -44,7 +44,7 @@ user_teams = {}  # user_id -> team_name
 admin_states = {}  # user_id -> state
 registration_states = {}  # user_id -> slot_num
 
-# Turnuva Oda Bilgileri (Admin belirleyecek)
+# Turnuva Oda Bilgileri
 tournament_room = {
     "room_id": "Henüz belirlenmedi",
     "room_pass": "Henüz belirlenmedi"
@@ -217,7 +217,7 @@ def callback_select_slot(call):
     bot.answer_callback_query(call.id)
 
 
-# --- 5. MESAJ YÖNETİCİSİ (Şifre, Takım Adı, Admin Oda Bilgisi) ---
+# --- 5. MESAJ YÖNETİCİSİ ---
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     user_id = message.from_user.id
@@ -244,7 +244,7 @@ def handle_all_messages(message):
             admin_states.pop(user_id, None)
         return
 
-    # B) Admin Oda Bilgisi Girişi (ID ve Şifre)
+    # B) Admin Oda Bilgisi Girişi
     if user_id in admin_states and admin_states[user_id] == "waiting_room_info":
         parts = text.split()
         if len(parts) < 2:
@@ -272,7 +272,7 @@ def handle_all_messages(message):
                     "🚨 **TURNUVA ODA BİLGİLERİ YAYINLANDI!** 🚨\n\n"
                     f"🔑 **Oda ID:** `{room_id}`\n"
                     f"🔒 **Oda Şifresi:** `{room_pass}`\n\n"
-                    "Hadi savaş alanına! 🏆",
+                    "Profilinden de detayları görebilirsin! 🏆",
                     parse_mode="Markdown"
                 )
             except:
@@ -288,5 +288,4 @@ def handle_all_messages(message):
 
         if slots[slot_num] != "Boş":
             del registration_states[user_id]
-            bot.send_message(message.chat.id, "❌ Üzgünüm, bu slot siz yazana kadar başkası tarafından alındı!")
-            show_main_menu(message.chat
+            bot.send_message(message.chat.id, "❌ Üzgünüm, bu slot siz yaz
