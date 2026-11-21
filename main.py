@@ -5,7 +5,6 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 TOKEN = "9172005481:AAEbc_bAij8pRfdEvcDM9V1egFGzyl9QjaM"
-ADMIN_SIFRE = "631363"
 
 t_aktif = True
 t_saat = 1200
@@ -135,9 +134,16 @@ async def buton(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     elif data.startswith("sl_"):
         no = int(data.split("_")[1])
-        if slotlar[no]["durum"] == "Dolu":
-            await q.answer(f"⚠️ Slot {no} dolu!", show_alert=True)
+        # Kullanıcının halihazırda slotu var mı kontrol et
+        mevcut_slot = next((n for n, b in slotlar.items() if b.get("user_id") == uid), None)
+        if mevcut_slot:
+            await q.answer(f"⚠️ Zaten Slot {mevcut_slot}'te kaydınız var!", show_alert=True)
             return
+
+        if slotlar[no]["durum"] == "Dolu":
+            await q.answer(f"⚠️ Bu slot başkası tarafından alındı!", show_alert=True)
+            return
+            
         durumlar[uid] = {"durum": "takim_adi", "slot": no}
         await q.message.reply_text(f"✅ Slot {no} seçildi. Takım adını yazın:")
 
@@ -153,9 +159,9 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if b.get("user_id") == uid:
                 slotlar[no] = {"durum": "Boş", "takim": "-", "user_id": None}
                 durumlar.pop(uid, None)
-                await update.message.reply_text(f"✅ Slot {no} iptal edildi!", reply_markup=m_menu())
+                await update.message.reply_text(f"✅ Slot {no} üzerindeki kaydınız iptal edildi!", reply_markup=m_menu())
                 return
-        await update.message.reply_text("⚠️ Aktif kaydınız yok.", reply_markup=m_menu())
+        await update.message.reply_text("⚠️ Aktif bir slot kaydınız bulunmuyor.", reply_markup=m_menu())
         return
 
     if txt.lower() in ["admin", "/admin"]:
@@ -168,7 +174,7 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if d == "bekle_bildirim":
             bildirimler.append(f"ID {uid}: {txt}")
             durumlar.pop(uid, None)
-            await update.message.reply_text("✅ Admine iletildi!", reply_markup=m_menu())
+            await update.message.reply_text("✅ Mesajınız admine iletildi!", reply_markup=m_menu())
             return
         if d == "admin_panel":
             await update.message.reply_text("👑 Admin Paneli:", reply_markup=a_klavye())
@@ -183,9 +189,9 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
             durumlar[uid] = "admin_panel"
             for no, b in slotlar.items():
                 if b.get("user_id"):
-                    try: await context.bot.send_message(b["user_id"], f"🚨 Oda Bilgisi!\nSlot: {no}\nID: {oda_id}\nŞifre: {oda_sifre}")
+                    try: await context.bot.send_message(b["user_id"], f"🚨 Oda Bilgisi Paylaşıldı!\nSlot: {no}\nID: {oda_id}\nŞifre: {oda_sifre}")
                     except: pass
-            await update.message.reply_text("✅ Oda bilgileri kaydedildi ve bildirildi!", reply_markup=a_klavye())
+            await update.message.reply_text("✅ Oda bilgileri kaydedildi ve kullanıcılara bildirildi!", reply_markup=a_klavye())
             return
         if d == "adm_sil":
             durumlar.pop(uid, None)
@@ -207,12 +213,13 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if isinstance(d, dict) and d.get("durum") == "takim_adi":
             no = d["slot"]
             if slotlar[no]["durum"] == "Dolu":
-                await update.message.reply_text("⚠️ Bu slot dolmuş!")
+                await update.message.reply_text("⚠️ Üzgünüm, bu slot az önce başka biri tarafından seçildi! Lütfen başka bir slot seçin.")
                 durumlar.pop(uid, None)
                 return
+            
             slotlar[no] = {"durum": "Dolu", "takim": txt, "user_id": uid}
             durumlar.pop(uid, None)
-            await update.message.reply_text(f"🎉 Kayıt Oldunuz!\n\n📌 Slot: {no}\n🏆 Takım: {txt}\n⏳ Saat: {saat_yaz(t_saat)}\n\n⚠️ İptal için `iptal` yazın.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ana Menü", callback_data="ana")]]))
+            await update.message.reply_text(f"🎉 Başarıyla Kayıt Oldunuz!\n\n📌 Slot: {no}\n🏆 Takım: {txt}\n⏳ Saat: {saat_yaz(t_saat)}\n\n⚠️ İptal etmek için `iptal` yazabilirsiniz.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ana Menü", callback_data="ana")]]))
             return
 
     if not t_aktif:
