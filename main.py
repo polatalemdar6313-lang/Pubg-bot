@@ -70,7 +70,10 @@ def show_main_menu(chat_id):
 def callback_check_sub(call):
     if check_sub(call.from_user.id):
         bot.answer_callback_query(call.id, "Tebrikler! Kanal doğrulandı. 🎉")
-        bot.delete_message(call.message.chat.id, call.message.message_id)
+        try:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+        except:
+            pass
         show_main_menu(call.message.chat.id)
     else:
         bot.answer_callback_query(call.id, "Henüz kanala katılmamışsın!", show_alert=True)
@@ -100,13 +103,16 @@ def callback_show_slots(call):
 
     table_text += "\n*(Kayıt olmak için boş bir slota tıklayabilirsin!)*"
 
-    bot.edit_message_text(
-        table_text,
-        call.message.chat.id,
-        call.message.message_id,
-        parse_mode="Markdown",
-        reply_markup=markup
-    )
+    try:
+        bot.edit_message_text(
+            table_text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+    except:
+        bot.send_message(call.message.chat.id, table_text, parse_mode="Markdown", reply_markup=markup)
 
 
 # Slot Seçme ve Takım Adı İsteme
@@ -115,7 +121,6 @@ def callback_select_slot(call):
     slot_num = int(call.data.split("_")[1])
     user_id = call.from_user.id
 
-    # Kullanıcının zaten bir slotu var mı kontrol et
     if user_id in user_slots:
         bot.answer_callback_query(call.id, f"Zaten {user_slots[user_id]}. slotta kaydın var!", show_alert=True)
         return
@@ -124,7 +129,6 @@ def callback_select_slot(call):
         bot.answer_callback_query(call.id, "Bu slot maalesef dolu, başka bir tane seç!", show_alert=True)
         return
 
-    # Kayıt aşamasına geç
     registration_states[user_id] = slot_num
     
     markup = types.InlineKeyboardMarkup()
@@ -151,7 +155,6 @@ def get_team_name(message):
         bot.send_message(message.chat.id, "⚠️ Takım adı çok uzun! Lütfen en fazla 30 karakter gir.")
         return
 
-    # Slotu güncelle
     slots[slot_num] = team_name
     user_slots[user_id] = slot_num
     del registration_states[user_id]
@@ -186,11 +189,14 @@ def callback_cancel_slot(call):
 # Ana Menüye Dönüş
 @bot.callback_query_handler(func=lambda call: call.data == "main_menu")
 def callback_main_menu(call):
-    bot.delete_message(call.message.chat.id, call.message.message_id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except:
+        pass
     show_main_menu(call.message.chat.id)
 
 
-# --- ADMIN PANELİ (Butonsuz - Komutla Yönetim) ---
+# --- ADMIN PANELİ ---
 @bot.message_handler(commands=['admin'])
 def admin_login(message):
     admin_states[message.from_user.id] = "waiting_password"
@@ -204,13 +210,12 @@ def admin_login(message):
 @bot.message_handler(func=lambda message: message.from_user.id in admin_states)
 def admin_panel_handler(message):
     user_id = message.from_user.id
-    state = admin_states[user_id]
+    state = admin_states.get(user_id)
 
     if state == "waiting_password":
         if message.text.strip() == ADMIN_PASSWORD:
             admin_states[user_id] = "logged_in"
             
-            # Admin Menüsü (Butonlar ile yönetim)
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("🔄 Turnuvayı Sıfırla", callback_data="admin_reset"))
             markup.add(types.InlineKeyboardButton("⏳ Geri Sayım Başlat", callback_data="admin_countdown"))
@@ -223,13 +228,13 @@ def admin_panel_handler(message):
             )
         else:
             bot.send_message(message.chat.id, "❌ Hatalı şifre! Tekrar /admin yazarak deneyebilirsin.")
-            del admin_states[user_id]
+            admin_states.pop(user_id, None)
 
 
 # Admin: Turnuvayı Sıfırlama
 @bot.callback_query_handler(func=lambda call: call.data == "admin_reset")
 def admin_reset_tournament(call):
-    if call.from_user.id not in admin_states or admin_states[call.from_user.id] != "logged_in":
+    if admin_states.get(call.from_user.id) != "logged_in":
         return
 
     global slots, user_slots
@@ -243,7 +248,7 @@ def admin_reset_tournament(call):
 # Admin: Geri Sayım Sayacı Başlatma
 @bot.callback_query_handler(func=lambda call: call.data == "admin_countdown")
 def admin_start_countdown(call):
-    if call.from_user.id not in admin_states or admin_states[call.from_user.id] != "logged_in":
+    if admin_states.get(call.from_user.id) != "logged_in":
         return
 
     bot.answer_callback_query(call.id, "Geri sayım başlatıldı!")
@@ -257,7 +262,10 @@ def admin_start_countdown(call):
             pass
 
     time.sleep(1)
-    bot.edit_message_text("🚨 **START! START! START!**\n\n🔥 Turnuva başlamıştır, tüm takımlara başarılar dileriz! 🏆", call.message.chat.id, msg.message_id, parse_mode="Markdown")
+    try:
+        bot.edit_message_text("🚨 **START! START! START!**\n\n🔥 Turnuva başlamıştır, tüm takımlara başarılar dileriz! 🏆", call.message.chat.id, msg.message_id, parse_mode="Markdown")
+    except:
+        pass
 
 
 # Botu Çalıştır
