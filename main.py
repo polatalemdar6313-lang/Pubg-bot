@@ -7,7 +7,7 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 TOKEN = "9110504722:AAGddP_BnHguYkzLnC5X3-YC4i9l6SES1oI"
 ADMIN_SIFRE = "631363"
 
-t_aktif = False
+t_aktif = True  # Varsayılan olarak açık başladı
 t_saat = 1200
 slotlar = {i: {"durum": "Boş", "takim": "-", "user_id": None} for i in range(1, 26)}
 durumlar = {}
@@ -175,7 +175,6 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not txt: return
     txt = txt.strip()
 
-    # 1. Şifre kontrolü
     if durumlar.get(uid) == "admin_sifre_bekleniyor":
         if txt == ADMIN_SIFRE:
             durumlar[uid] = "admin_panel"
@@ -185,7 +184,6 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Yanlış şifre!")
         return
 
-    # 2. İptal komutu
     if txt.lower() == "iptal":
         for no, b in slotlar.items():
             if b.get("user_id") == uid:
@@ -196,7 +194,6 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Aktif bir slot kaydınız bulunmuyor.", reply_markup=m_menu())
         return
 
-    # 3. Admin ve kullanıcı akışları
     if uid in durumlar:
         d = durumlar[uid]
         if d == "bekle_bildirim":
