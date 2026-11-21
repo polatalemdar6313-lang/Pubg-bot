@@ -4,7 +4,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-TOKEN = "9172005481:AAEbc_bAij8pRfdEvcDM9V1egFGzyl9QjaM"
+TOKEN = "9110504722:AAEg6Qs2i-CcwigfV-d96osE-KQ9XHD-tJk"
 ADMIN_SIFRE = "631363"
 
 t_aktif = True
@@ -162,7 +162,6 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not txt: return
     txt = txt.strip()
 
-    # Şifre kontrolü
     if durumlar.get(uid) == "admin_sifre_bekleniyor":
         if txt == ADMIN_SIFRE:
             durumlar[uid] = "admin_panel"
@@ -242,7 +241,7 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", admin_komut))  # Kesin çözüm için komut yapıldı
+    app.add_handler(CommandHandler("admin", admin_komut))
     app.add_handler(CallbackQueryHandler(buton))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mesaj))
     print("Bot çalışıyor...")
