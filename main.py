@@ -1,4 +1,13 @@
-import telebot
+import sys
+import subprocess
+
+# --- OTOMATİK KÜTÜPHANE YÜKLEYİCİ (Render hatasını kökten çözer) ---
+try:
+    import telebot
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyTelegramBotAPI"])
+    import telebot
+
 from telebot import types
 import time
 
@@ -182,92 +191,4 @@ def callback_cancel_slot(call):
     slots[slot_num] = "Boş"
     del user_slots[user_id]
 
-    bot.answer_callback_query(call.id, f"{slot_num}. slot üzerindeki kaydın iptal edildi.")
-    callback_show_slots(call)
-
-
-# Ana Menüye Dönüş
-@bot.callback_query_handler(func=lambda call: call.data == "main_menu")
-def callback_main_menu(call):
-    try:
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-    except:
-        pass
-    show_main_menu(call.message.chat.id)
-
-
-# --- ADMIN PANELİ ---
-@bot.message_handler(commands=['admin'])
-def admin_login(message):
-    admin_states[message.from_user.id] = "waiting_password"
-    bot.send_message(
-        message.chat.id,
-        "🔐 **ADMİN GİRİŞİ**\n\nLütfen admin şifresini gir:",
-        parse_mode="Markdown"
-    )
-
-
-@bot.message_handler(func=lambda message: message.from_user.id in admin_states)
-def admin_panel_handler(message):
-    user_id = message.from_user.id
-    state = admin_states.get(user_id)
-
-    if state == "waiting_password":
-        if message.text.strip() == ADMIN_PASSWORD:
-            admin_states[user_id] = "logged_in"
-            
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("🔄 Turnuvayı Sıfırla", callback_data="admin_reset"))
-            markup.add(types.InlineKeyboardButton("⏳ Geri Sayım Başlat", callback_data="admin_countdown"))
-            
-            bot.send_message(
-                message.chat.id,
-                "👑 **ADMİN PANELİNE HOŞ GELDİNİZ**\n\nYönetmek istediğiniz işlemi seçin:",
-                parse_mode="Markdown",
-                reply_markup=markup
-            )
-        else:
-            bot.send_message(message.chat.id, "❌ Hatalı şifre! Tekrar /admin yazarak deneyebilirsin.")
-            admin_states.pop(user_id, None)
-
-
-# Admin: Turnuvayı Sıfırlama
-@bot.callback_query_handler(func=lambda call: call.data == "admin_reset")
-def admin_reset_tournament(call):
-    if admin_states.get(call.from_user.id) != "logged_in":
-        return
-
-    global slots, user_slots
-    slots = {i: "Boş" for i in range(1, 26)}
-    user_slots.clear()
-
-    bot.answer_callback_query(call.id, "Turnuva başarıyla sıfırlandı!")
-    bot.send_message(call.message.chat.id, "🔄 **Sistem Bilgisi:** Tüm slotlar temizlendi ve turnuva sıfırlandı!")
-
-
-# Admin: Geri Sayım Sayacı Başlatma
-@bot.callback_query_handler(func=lambda call: call.data == "admin_countdown")
-def admin_start_countdown(call):
-    if admin_states.get(call.from_user.id) != "logged_in":
-        return
-
-    bot.answer_callback_query(call.id, "Geri sayım başlatıldı!")
-    msg = bot.send_message(call.message.chat.id, "⏳ **TURNUVAYA KALAN SÜRE**\n\nBaşlangıç: **10 saniye** kaldı! 🚀", parse_mode="Markdown")
-    
-    for i in range(9, 0, -1):
-        time.sleep(1)
-        try:
-            bot.edit_message_text(f"⏳ **TURNUVAYA KALAN SÜRE**\n\nBaşlangıç: **{i} saniye** kaldı! 🚀", call.message.chat.id, msg.message_id, parse_mode="Markdown")
-        except:
-            pass
-
-    time.sleep(1)
-    try:
-        bot.edit_message_text("🚨 **START! START! START!**\n\n🔥 Turnuva başlamıştır, tüm takımlara başarılar dileriz! 🏆", call.message.chat.id, msg.message_id, parse_mode="Markdown")
-    except:
-        pass
-
-
-# Botu Çalıştır
-print("WEX Event Bot aktif ve çalışıyor...")
-bot.infinity_polling()
+    bot.answer_callback_
