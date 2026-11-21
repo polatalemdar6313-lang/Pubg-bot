@@ -1,210 +1,242 @@
-import sys, subprocess, os
-try:
-    import telebot
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyTelegramBotAPI", "flask"])
-    import telebot
-from telebot import types
-import time
-from flask import Flask
-from threading import Thread
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-app = Flask('')
-@app.route('/')
-def home():
-    return "WEX Bot Aktif!"
-
-def run_web():
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
-
-Thread(target=run_web, daemon=True).start()
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 TOKEN = "9172005481:AAEbc_bAij8pRfdEvcDM9V1egFGzyl9QjaM"
-CHANNEL_USERNAME = "@wexorganizasyon"
-ADMIN_PASSWORD = "631363"
+ADMIN_SIFRE = "631363"
 
-bot = telebot.TeleBot(TOKEN)
-slots = {i: "Boş" for i in range(1, 26)}
-user_slots = {}
-user_teams = {}
-admin_states = {}
-registration_states = {}
-tournament_room = {"room_id": "Belirlenmedi", "room_pass": "Belirlenmedi"}
+t_aktif = True
+t_saat = 1200
+slotlar = {i: {"durum": "Boş", "takim": "-", "user_id": None} for i in range(1, 26)}
+durumlar = {}
+kullanicilar = set()
+bildirimler = []
+kanal = "https://t.me/wexorganizasyon"
+oda_id = "-"
+oda_sifre = "-"
 
-def check_sub(user_id):
-    try:
-        m = bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        return m.status in ['member', 'administrator', 'creator']
-    except:
-        return False
+def saat_yaz(dk):
+    s = (dk % 1440) // 60
+    d = (dk % 1440) % 60
+    return f"{s:02d}:{d:02d}"
 
-def show_main_menu(chat_id):
-    m = types.InlineKeyboardMarkup(row_width=2)
-    m.add(types.InlineKeyboardButton("🏆 Slot Tablosu", callback_data="show_slots"),
-          types.InlineKeyboardButton("👤 Profilim", callback_data="show_profile"))
-    bot.send_message(chat_id, "🔥 **WEX ESPORTS TURNUVA MERKEZİ** 🔥\n\nAşağıdaki menüden işlem yapabilirsin.", parse_mode="Markdown", reply_markup=m)
+def m_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏆 Slot Tablosu & Kayıt Ol", callback_data="s_tablo")],
+        [InlineKeyboardButton("👤 Profilim", callback_data="profil")],
+        [InlineKeyboardButton("📩 Admine Bildirim Gönder", callback_data="bildir")],
+        [InlineKeyboardButton("⚠️ Kayıt İptal Et", callback_data="iptal_et")]
+    ])
 
-@bot.message_handler(commands=['start'])
-def start(m):
-    if not check_sub(m.from_user.id):
-        mup = types.InlineKeyboardMarkup()
-        mup.add(types.InlineKeyboardButton("📢 Kanala Katıl", url=f"https://t.me/{CHANNEL_USERNAME.replace('@','')}"))
-        mup.add(types.InlineKeyboardButton("🔄 Kontrol Et", callback_data="check_subscription"))
-        bot.send_message(m.chat.id, f"⚠️ Devam etmek için kanala katılmalısın:\n👉 {CHANNEL_USERNAME}", reply_markup=mup)
-        return
-    show_main_menu(m.chat.id)
+def s_klavye():
+    kb = []
+    satir = []
+    for no, b in slotlar.items():
+        txt = f"Slot {no} 🟢 BOŞ" if b["durum"] == "Boş" else f"Slot {no} 🔴 {b['takim']}"
+        satir.append(InlineKeyboardButton(txt, callback_data=f"sl_{no}"))
+        if len(satir) == 2:
+            kb.append(satir)
+            satir = []
+    if satir:
+        kb.append(satir)
+    kb.append([InlineKeyboardButton("🔙 Ana Menü", callback_data="ana")])
+    return InlineKeyboardMarkup(kb)
 
-@bot.callback_query_handler(func=lambda c: c.data == "check_subscription")
-def sub_check(c):
-    if check_sub(c.from_user.id):
-        bot.answer_callback_query(c.id, "Kanal onaylandı! 🎉")
-        try: bot.delete_message(c.message.chat.id, c.message.message_id)
-        except: pass
-        show_main_menu(c.message.chat.id)
+def a_klavye():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"⏳ Saat: {saat_yaz(t_saat)}", callback_data="bos")],
+        [InlineKeyboardButton("➖ 30dk", callback_data="a_eksi"), InlineKeyboardButton("➕ 30dk", callback_data="a_arti")],
+        [InlineKeyboardButton("🔑 Oda ID & Şifre Gir", callback_data="a_oda")],
+        [InlineKeyboardButton("🗑️ Slot Sil", callback_data="a_sil")],
+        [InlineKeyboardButton("🔄 Sıfırla", callback_data="a_sifirla")],
+        [InlineKeyboardButton("📥 Bildirimler", callback_data="a_oku")],
+        [InlineKeyboardButton("📢 Duyuru", callback_data="a_duyuru")],
+        [InlineKeyboardButton("🚪 Çıkış", callback_data="ana")]
+    ])
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    kullanicilar.add(uid)
+    durumlar.pop(uid, None)
+    
+    msg = (
+        "🔥 WEX ESPORTS TURNUVA MERKEZİNE HOŞ GELDİN! 🔥\n\n"
+        "🏆 Mücadele başlasın, kazanan inatçı savaşçı olsun!\n"
+        f"⏳ Turnuva Saati: {saat_yaz(t_saat)}\n"
+        f"📢 Kanal: {kanal}\n\n"
+        "Aşağıdaki butonu kullanarak slot seçebilirsin. 🚀"
+    )
+    if update.callback_query:
+        await update.callback_query.message.edit_text(msg, reply_markup=m_menu())
     else:
-        bot.answer_callback_query(c.id, "Henüz kanala katılmadın!", show_alert=True)
+        await update.message.reply_text(msg, reply_markup=m_menu())
 
-@bot.message_handler(commands=['admin'])
-def admin(m):
-    admin_states[m.from_user.id] = "waiting_password"
-    bot.send_message(m.chat.id, "🔐 **ADMİN GİRİŞİ**\n\nŞifreyi gir:")
-
-@bot.callback_query_handler(func=lambda c: c.data == "show_profile")
-def profile(c):
-    uid = c.from_user.id
-    if uid not in user_slots:
-        txt = "👤 **PROFİL**\n\n❌ Aktif kaydın yok.\n🔑 Oda ID: Belirlenmedi\n🔒 Şifre: Belirlenmedi"
-    else:
-        txt = f"👤 **PROFİL**\n\n🏆 Takım: `{user_teams.get(uid)}`\n📍 Slot: `{user_slots[uid]}. Slot`\n\n🔑 Oda ID: `{tournament_room['room_id']}`\n🔒 Şifre: `{tournament_room['room_pass']}`"
-    mup = types.InlineKeyboardMarkup()
-    mup.add(types.InlineKeyboardButton("🔙 Ana Menü", callback_data="main_menu"))
-    try: bot.edit_message_text(txt, c.message.chat.id, c.message.message_id, parse_mode="Markdown", reply_markup=mup)
-    except: bot.send_message(c.message.chat.id, txt, parse_mode="Markdown", reply_markup=mup)
-
-@bot.callback_query_handler(func=lambda c: c.data == "show_slots")
-def slots_menu(c):
-    mup = types.InlineKeyboardMarkup(row_width=5)
-    btns = [types.InlineKeyboardButton(f"{i} {'🟢' if slots[i]=='Boş' else '🔴'}", callback_data=f"slot_{i}") for i in range(1, 26)]
-    mup.add(*btns)
-    mup.add(types.InlineKeyboardButton("❌ Slotumu İptal Et", callback_data="cancel_my_slot"))
-    mup.add(types.InlineKeyboardButton("🔙 Ana Menü", callback_data="main_menu"))
-    txt = "🎯 **SLOT LİSTESİ**\n\n" + "\n".join([f"{'🟩' if slots[i]=='Boş' else '🟥'} Slot {i}: `{slots[i]}`" for i in range(1, 26)])
-    try: bot.edit_message_text(txt, c.message.chat.id, c.message.message_id, parse_mode="Markdown", reply_markup=mup)
-    except: bot.send_message(c.message.chat.id, txt, parse_mode="Markdown", reply_markup=mup)
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("slot_"))
-def select_slot(c):
-    s = int(c.data.split("_")[1])
-    uid = c.from_user.id
-    if uid in user_slots:
-        bot.answer_callback_query(c.id, "Zaten bir slotun var!", show_alert=True)
+async def buton(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global t_aktif, t_saat, oda_id, oda_sifre
+    q = update.callback_query
+    await q.answer()
+    uid = q.from_user.id
+    data = q.data
+    
+    if data == "ana":
+        durumlar.pop(uid, None)
+        await start(update, context)
         return
-    if slots[s] != "Boş":
-        bot.answer_callback_query(c.id, "Bu slot dolu!", show_alert=True)
+    if data == "bos":
         return
-    registration_states[uid] = s
-    mup = types.InlineKeyboardMarkup()
-    mup.add(types.InlineKeyboardButton("İptal", callback_data="show_slots"))
-    bot.send_message(c.message.chat.id, f"🎯 {s}. Slot seçildi. Takım adını yaz:", reply_markup=mup)
-    bot.answer_callback_query(c.id)
-
-@bot.message_handler(func=lambda m: True)
-def msg_handler(m):
-    uid = m.from_user.id
-    txt = m.text.strip() if m.text else ""
-    if uid in admin_states and admin_states[uid] == "waiting_password":
-        if txt == ADMIN_PASSWORD:
-            admin_states[uid] = "logged_in"
-            mup = types.InlineKeyboardMarkup()
-            mup.add(types.InlineKeyboardButton("🔑 Oda Bilgisi Gir", callback_data="admin_set_room"),
-                    types.InlineKeyboardButton("🔄 Sıfırla", callback_data="admin_reset"),
-                    types.InlineKeyboardButton("⏳ Sayaç", callback_data="admin_countdown"),
-                    types.InlineKeyboardButton("🔙 Ana Menü", callback_data="main_menu"))
-            bot.send_message(m.chat.id, "👑 **ADMİN PANELİ**", reply_markup=mup)
+        
+    if not t_aktif and not data.startswith("a_"):
+        await q.message.edit_text("❌ Aktif turnuva yok.")
+        return
+        
+    if data == "s_tablo":
+        await q.message.edit_text("📋 Güncel Slot Tablosu:", reply_markup=s_klavye())
+    elif data == "profil":
+        slotum = next((no for no, b in slotlar.items() if b.get("user_id") == uid), None)
+        if slotum:
+            txt = f"👤 Profiliniz:\n\n📌 Slot: {slotum}\n🏆 Takım: {slotlar[slotum]['takim']}\n⏳ Saat: {saat_yaz(t_saat)}\n\n🔑 Oda ID & Şifre: {oda_id} / {oda_sifre}\n⚠️ İptal için `iptal` yazın."
         else:
-            bot.send_message(m.chat.id, "❌ Hatalı şifre!")
-            admin_states.pop(uid, None)
-        return
-
-    if uid in admin_states and admin_states[uid] == "waiting_room_info":
-        parts = txt.split()
-        if len(parts) < 2:
-            bot.send_message(m.chat.id, "⚠️ Örnek format: `123456 şifre123`", parse_mode="Markdown")
+            txt = "⚠️ Aktif slot kaydınız yok."
+        await q.message.edit_text(txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ana Menü", callback_data="ana")]]))
+    elif data == "bildir":
+        durumlar[uid] = "bekle_bildirim"
+        await q.message.reply_text("📩 Admine göndereceğiniz mesajı yazın:")
+    elif data == "iptal_et":
+        for no, b in slotlar.items():
+            if b.get("user_id") == uid:
+                slotlar[no] = {"durum": "Boş", "takim": "-", "user_id": None}
+                await q.message.edit_text(f"✅ Slot {no} iptal edildi!", reply_markup=m_menu())
+                return
+        await q.message.edit_text("⚠️ Aktif kaydınız yok.", reply_markup=m_menu())
+        
+    elif data.startswith("a_"):
+        if data == "a_sifirla":
+            for no in slotlar: slotlar[no] = {"durum": "Boş", "takim": "-", "user_id": None}
+            oda_id, oda_sifre, t_aktif, t_saat = "-", "-", False, 1200
+            bildirimler.clear()
+            await q.message.edit_text("🔄 Sıfırlandı!", reply_markup=a_klavye())
+        elif data == "a_arti":
+            t_saat = (t_saat + 30) % 1440
+            await q.message.edit_text("👑 Admin Paneli:", reply_markup=a_klavye())
+        elif data == "a_eksi":
+            t_saat = (t_saat - 30) % 1440
+            await q.message.edit_text("👑 Admin Paneli:", reply_markup=a_klavye())
+        elif data == "a_oda":
+            durumlar[uid] = "adm_oda_id"
+            await q.message.reply_text("🔑 Oda ID'sini yazın:")
+        elif data == "a_sil":
+            durumlar[uid] = "adm_sil"
+            await q.message.reply_text("🗑️ Silinecek slot no yazın:")
+        elif data == "a_oku":
+            lst = "📥 Bildirim yok." if not bildirimler else "📥 Bildirimler:\n\n" + "\n".join(bildirimler)
+            await q.message.edit_text(lst, reply_markup=a_klavye())
+        elif data == "a_duyuru":
+            durumlar[uid] = "adm_duyuru"
+            await q.message.reply_text("📢 Duyuru metnini yazın:")
+            
+    elif data.startswith("sl_"):
+        no = int(data.split("_")[1])
+        mevcut_slot = next((n for n, b in slotlar.items() if b.get("user_id") == uid), None)
+        if mevcut_slot:
+            await q.answer(f"⚠️ Zaten Slot {mevcut_slot}'te kaydınız var!", show_alert=True)
             return
-        tournament_room["room_id"], tournament_room["room_pass"] = parts[0], parts[1]
-        admin_states[uid] = "logged_in"
-        bot.send_message(m.chat.id, "✅ Oda bilgileri güncellendi ve kullanıcılara bildiriliyor...")
-        for u in user_slots:
-            try: bot.send_message(u, f"🚨 **Oda Bilgisi Yayınlandı!**\n🔑 ID: `{parts[0]}`\n🔒 Şifre: `{parts[1]}`", parse_mode="Markdown")
-            except: pass
-        show_main_menu(m.chat.id)
-        return
 
-    if uid in registration_states:
-        s = registration_states[uid]
-        if slots[s] != "Boş":
-            del registration_states[uid]
-            bot.send_message(m.chat.id, "❌ Bu slot başkası tarafından alındı!")
-            show_main_menu(m.chat.id)
+        if slotlar[no]["durum"] == "Dolu":
+            await q.answer(f"⚠️ Bu slot başkası tarafından alındı!", show_alert=True)
             return
-        slots[s] = txt
-        user_slots[uid] = s
-        user_teams[uid] = txt
-        del registration_states[uid]
-        bot.send_message(m.chat.id, f"✅ Kayıt başarılı! Takım: {txt}, Slot: {s}")
-        show_main_menu(m.chat.id)
+            
+        durumlar[uid] = {"durum": "takim_adi", "slot": no}
+        await q.message.reply_text(f"✅ Slot {no} seçildi. Takım adını yazın:")
+
+async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global t_aktif, oda_id, oda_sifre
+    uid = update.effective_user.id
+    txt = update.message.text
+    if not txt: return
+    txt = txt.strip()
+
+    # En öncelikli kontrol: Admin girişi
+    if txt.lower() in ["admin", "/admin"]:
+        durumlar[uid] = "admin_panel"
+        await update.message.reply_text("👑 Admin Paneli:", reply_markup=a_klavye())
         return
 
-@bot.callback_query_handler(func=lambda c: c.data == "cancel_my_slot")
-def cancel(c):
-    uid = c.from_user.id
-    if uid not in user_slots:
-        bot.answer_callback_query(c.id, "Kayıtlı slotun yok!", show_alert=True)
+    if txt.lower() == "iptal":
+        for no, b in slotlar.items():
+            if b.get("user_id") == uid:
+                slotlar[no] = {"durum": "Boş", "takim": "-", "user_id": None}
+                durumlar.pop(uid, None)
+                await update.message.reply_text(f"✅ Slot {no} üzerindeki kaydınız iptal edildi!", reply_markup=m_menu())
+                return
+        await update.message.reply_text("⚠️ Aktif bir slot kaydınız bulunmuyor.", reply_markup=m_menu())
         return
-    s = user_slots[uid]
-    slots[s] = "Boş"
-    user_slots.pop(uid, None)
-    user_teams.pop(uid, None)
-    bot.answer_callback_query(c.id, "Slot iptal edildi.")
-    slots_menu(c)
 
-@bot.callback_query_handler(func=lambda c: c.data == "main_menu")
-def menu_cb(c):
-    try: bot.delete_message(c.message.chat.id, c.message.message_id)
-    except: pass
-    show_main_menu(c.message.chat.id)
+    if uid in durumlar:
+        d = durumlar[uid]
+        if d == "bekle_bildirim":
+            bildirimler.append(f"ID {uid}: {txt}")
+            durumlar.pop(uid, None)
+            await update.message.reply_text("✅ Mesajınız admine iletildi!", reply_markup=m_menu())
+            return
+        if d == "admin_panel":
+            await update.message.reply_text("👑 Admin Paneli:", reply_markup=a_klavye())
+            return
+        if d == "adm_oda_id":
+            durumlar[uid] = {"durum": "adm_oda_sifre", "id": txt}
+            await update.message.reply_text("🔑 Oda şifresini yazın:")
+            return
+        if isinstance(d, dict) and d.get("durum") == "adm_oda_sifre":
+            oda_id = d["id"]
+            oda_sifre = txt
+            durumlar[uid] = "admin_panel"
+            for no, b in slotlar.items():
+                if b.get("user_id"):
+                    try: await context.bot.send_message(b["user_id"], f"🚨 Oda Bilgisi Paylaşıldı!\nSlot: {no}\nID: {oda_id}\nŞifre: {oda_sifre}")
+                    except: pass
+            await update.message.reply_text("✅ Oda bilgileri kaydedildi ve kullanıcılara bildirildi!", reply_markup=a_klavye())
+            return
+        if d == "adm_sil":
+            durumlar.pop(uid, None)
+            try:
+                no = int(txt)
+                if no in slotlar:
+                    slotlar[no] = {"durum": "Boş", "takim": "-", "user_id": None}
+                    await update.message.reply_text(f"✅ Slot {no} silindi!", reply_markup=a_klavye())
+                else: await update.message.reply_text("❌ Geçersiz slot.", reply_markup=a_klavye())
+            except: await update.message.reply_text("❌ Sayı girin.", reply_markup=a_klavye())
+            return
+        if d == "adm_duyuru":
+            durumlar.pop(uid, None)
+            for u in kullanicilar:
+                try: await context.bot.send_message(u, f"📢 DUYURU:\n\n{txt}")
+                except: pass
+            await update.message.reply_text("✅ Duyuru gönderildi!", reply_markup=a_klavye())
+            return
+        if isinstance(d, dict) and d.get("durum") == "takim_adi":
+            no = d["slot"]
+            if slotlar[no]["durum"] == "Dolu":
+                await update.message.reply_text("⚠️ Üzgünüm, bu slot az önce başka biri tarafından seçildi! Lütfen başka bir slot seçin.")
+                durumlar.pop(uid, None)
+                return
+            
+            slotlar[no] = {"durum": "Dolu", "takim": txt, "user_id": uid}
+            durumlar.pop(uid, None)
+            await update.message.reply_text(f"🎉 Başarıyla Kayıt Oldunuz!\n\n📌 Slot: {no}\n🏆 Takım: {txt}\n⏳ Saat: {saat_yaz(t_saat)}\n\n⚠️ İptal etmek için `iptal` yazabilirsiniz.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ana Menü", callback_data="ana")]]))
+            return
 
-@bot.callback_query_handler(func=lambda c: c.data == "admin_set_room")
-def set_room_cb(c):
-    if admin_states.get(c.from_user.id) != "logged_in": return
-    admin_states[c.from_user.id] = "waiting_room_info"
-    bot.answer_callback_query(c.id)
-    bot.send_message(c.message.chat.id, "🔑 Oda ID ve Şifreyi araya boşluk koyarak yaz:")
+    if not t_aktif:
+        await update.message.reply_text("❌ Şu anda aktif bir turnuva yok.")
+        return
 
-@bot.callback_query_handler(func=lambda c: c.data == "admin_reset")
-def reset_cb(c):
-    if admin_states.get(c.from_user.id) != "logged_in": return
-    global slots, user_slots, user_teams, tournament_room
-    slots = {i: "Boş" for i in range(1, 26)}
-    user_slots.clear()
-    user_teams.clear()
-    tournament_room = {"room_id": "Belirlenmedi", "room_pass": "Belirlenmedi"}
-    bot.answer_callback_query(c.id, "Sıfırlandı!")
-    bot.send_message(c.message.chat.id, "🔄 Turnuva sıfırlandı.")
-
-@bot.callback_query_handler(func=lambda c: c.data == "admin_countdown")
-def count_cb(c):
-    if admin_states.get(c.from_user.id) != "logged_in": return
-    bot.answer_callback_query(c.id, "Başladı!")
-    msg = bot.send_message(c.message.chat.id, "⏳ Geri sayım: **10 saniye**", parse_mode="Markdown")
-    for i in range(9, 0, -1):
-        time.sleep(1)
-        try: bot.edit_message_text(f"⏳ Geri sayım: **{i} saniye**", c.message.chat.id, msg.message_id, parse_mode="Markdown")
-        except: pass
-    time.sleep(1)
-    try: bot.edit_message_text("🚨 **START! START! START!**", c.message.chat.id, msg.message_id, parse_mode="Markdown")
-    except: pass
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(buton))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mesaj))
+    print("Bot çalışıyor...")
+    app.run_polling()
 
 if __name__ == "__main__":
-    print("Bot aktif...")
-    bot.infinity_polling()
+    main()
