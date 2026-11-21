@@ -4,7 +4,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-TOKEN = "9110504722:AAEg6Qs2i-CcwigfV-d96osE-KQ9XHD-tJk"
+TOKEN = "9110504722:AAGddP_BnHguYkzLnC5X3-YC4i9l6SES1oI"
 ADMIN_SIFRE = "631363"
 
 t_aktif = True
