@@ -1,4 +1,4 @@
-import logging
+ logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
@@ -234,9 +234,4 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(buton))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mesaj))
-    print("Bot çalışıyor...")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND
