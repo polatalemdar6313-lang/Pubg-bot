@@ -73,6 +73,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(msg, reply_markup=m_menu())
 
+async def admin_komut(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    durumlar[uid] = "admin_sifre_bekleniyor"
+    await update.message.reply_text("🔒 Lütfen admin şifresini girin:")
+
 async def buton(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global t_aktif, t_saat, oda_id, oda_sifre
     q = update.callback_query
@@ -157,13 +162,7 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not txt: return
     txt = txt.strip()
 
-    # 1. Admin komutu en başta kontrol edilir
-    if txt.lower() in ["admin", "/admin"]:
-        durumlar[uid] = "admin_sifre_bekleniyor"
-        await update.message.reply_text("🔒 Şifreyi girin:")
-        return
-
-    # 2. Şifre kontrolü (Eğer kullanıcı şifre beklenen aşamadaysa)
+    # Şifre kontrolü
     if durumlar.get(uid) == "admin_sifre_bekleniyor":
         if txt == ADMIN_SIFRE:
             durumlar[uid] = "admin_panel"
@@ -173,7 +172,6 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Yanlış şifre!")
         return
 
-    # 3. İptal komutu
     if txt.lower() == "iptal":
         for no, b in slotlar.items():
             if b.get("user_id") == uid:
@@ -184,7 +182,6 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Aktif bir slot kaydınız bulunmuyor.", reply_markup=m_menu())
         return
 
-    # 4. Diğer akışlar
     if uid in durumlar:
         d = durumlar[uid]
         if d == "bekle_bildirim":
@@ -207,4 +204,49 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if b.get("user_id"):
                     try: await context.bot.send_message(b["user_id"], f"🚨 Oda Bilgisi Paylaşıldı!\nSlot: {no}\nID: {oda_id}\nŞifre: {oda_sifre}")
                     except: pass
-            await update.message.reply_text("✅ Oda bilgileri kaydedildi ve kullanıcılara bildirildi!", reply_markup=a_klav
+            await update.message.reply_text("✅ Oda bilgileri kaydedildi ve kullanıcılara bildirildi!", reply_markup=a_klavye())
+            return
+        if d == "adm_sil":
+            durumlar.pop(uid, None)
+            try:
+                no = int(txt)
+                if no in slotlar:
+                    slotlar[no] = {"durum": "Boş", "takim": "-", "user_id": None}
+                    await update.message.reply_text(f"✅ Slot {no} silindi!", reply_markup=a_klavye())
+                else: await update.message.reply_text("❌ Geçersiz slot.", reply_markup=a_klavye())
+            except: await update.message.reply_text("❌ Sayı girin.", reply_markup=a_klavye())
+            return
+        if d == "adm_duyuru":
+            durumlar.pop(uid, None)
+            for u in kullanicilar:
+                try: await context.bot.send_message(u, f"📢 DUYURU:\n\n{txt}")
+                except: pass
+            await update.message.reply_text("✅ Duyuru gönderildi!", reply_markup=a_klavye())
+            return
+        if isinstance(d, dict) and d.get("durum") == "takim_adi":
+            no = d["slot"]
+            if slotlar[no]["durum"] == "Dolu":
+                await update.message.reply_text("⚠️ Üzgünüm, bu slot az önce başka biri tarafından seçildi! Lütfen başka bir slot seçin.")
+                durumlar.pop(uid, None)
+                return
+            
+            slotlar[no] = {"durum": "Dolu", "takim": txt, "user_id": uid}
+            durumlar.pop(uid, None)
+            await update.message.reply_text(f"🎉 Başarıyla Kayıt Oldunuz!\n\n📌 Slot: {no}\n🏆 Takım: {txt}\n⏳ Saat: {saat_yaz(t_saat)}\n\n⚠️ İptal etmek için `iptal` yazabilirsiniz.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ana Menü", callback_data="ana")]]))
+            return
+
+    if not t_aktif:
+        await update.message.reply_text("❌ Şu anda aktif bir turnuva yok.")
+        return
+
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("admin", admin_komut))  # Kesin çözüm için komut yapıldı
+    app.add_handler(CallbackQueryHandler(buton))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mesaj))
+    print("Bot çalışıyor...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
