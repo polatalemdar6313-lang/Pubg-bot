@@ -1,4 +1,4 @@
- logging
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
@@ -157,10 +157,18 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not txt: return
     txt = txt.strip()
 
-    # En öncelikli kontrol: Admin girişi
     if txt.lower() in ["admin", "/admin"]:
-        durumlar[uid] = "admin_panel"
-        await update.message.reply_text("👑 Admin Paneli:", reply_markup=a_klavye())
+        durumlar[uid] = "admin_giris_bekliyor"
+        await update.message.reply_text("🔒 Şifreyi girin:")
+        return
+
+    if uid in durumlar and durumlar[uid] == "admin_giris_bekliyor":
+        if txt == ADMIN_SIFRE:
+            durumlar[uid] = "admin_panel"
+            await update.message.reply_text("👑 Admin Paneli:", reply_markup=a_klavye())
+        else:
+            durumlar.pop(uid, None)
+            await update.message.reply_text("❌ Yanlış şifre!")
         return
 
     if txt.lower() == "iptal":
@@ -234,4 +242,9 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(buton))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mesaj))
+    print("Bot çalışıyor...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
