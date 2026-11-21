@@ -7,7 +7,7 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 TOKEN = "9110504722:AAGddP_BnHguYkzLnC5X3-YC4i9l6SES1oI"
 ADMIN_SIFRE = "631363"
 
-t_aktif = True
+t_aktif = False
 t_saat = 1200
 slotlar = {i: {"durum": "Boş", "takim": "-", "user_id": None} for i in range(1, 26)}
 durumlar = {}
@@ -143,10 +143,10 @@ async def buton(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text("👑 Admin Paneli:", reply_markup=a_klavye())
         elif data == "a_oda":
             durumlar[uid] = "adm_oda_id"
-            await q.message.reply_text("🔑 Oda ID'sini yazın:")
+            await q.message.reply_text("🔑 Oda ID'sini yazın (Serbest):")
         elif data == "a_sil":
             durumlar[uid] = "adm_sil"
-            await q.message.reply_text("🗑️ Silinecek slot no yazın:")
+            await q.message.reply_text("🗑️ Silinecek slot numarasını yazın:")
         elif data == "a_oku":
             lst = "📥 Bildirim yok." if not bildirimler else "📥 Bildirimler:\n\n" + "\n".join(bildirimler)
             await q.message.edit_text(lst, reply_markup=a_klavye())
@@ -175,6 +175,7 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not txt: return
     txt = txt.strip()
 
+    # 1. Şifre kontrolü
     if durumlar.get(uid) == "admin_sifre_bekleniyor":
         if txt == ADMIN_SIFRE:
             durumlar[uid] = "admin_panel"
@@ -184,6 +185,7 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Yanlış şifre!")
         return
 
+    # 2. İptal komutu
     if txt.lower() == "iptal":
         for no, b in slotlar.items():
             if b.get("user_id") == uid:
@@ -194,6 +196,7 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Aktif bir slot kaydınız bulunmuyor.", reply_markup=m_menu())
         return
 
+    # 3. Admin ve kullanıcı akışları
     if uid in durumlar:
         d = durumlar[uid]
         if d == "bekle_bildirim":
@@ -206,7 +209,7 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         if d == "adm_oda_id":
             durumlar[uid] = {"durum": "adm_oda_sifre", "id": txt}
-            await update.message.reply_text("🔑 Oda şifresini yazın:")
+            await update.message.reply_text("🔑 Oda şifresini yazın (Serbest):")
             return
         if isinstance(d, dict) and d.get("durum") == "adm_oda_sifre":
             oda_id = d["id"]
@@ -225,8 +228,9 @@ async def mesaj(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if no in slotlar:
                     slotlar[no] = {"durum": "Boş", "takim": "-", "user_id": None}
                     await update.message.reply_text(f"✅ Slot {no} silindi!", reply_markup=a_klavye())
-                else: await update.message.reply_text("❌ Geçersiz slot.", reply_markup=a_klavye())
-            except: await update.message.reply_text("❌ Sayı girin.", reply_markup=a_klavye())
+                else: await update.message.reply_text("❌ Geçersiz slot numarası.", reply_markup=a_klavye())
+            except: 
+                await update.message.reply_text("❌ Lütfen geçerli bir slot numarası girin.", reply_markup=a_klavye())
             return
         if d == "adm_duyuru":
             durumlar.pop(uid, None)
