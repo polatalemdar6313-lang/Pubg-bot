@@ -39,9 +39,16 @@ bot = telebot.TeleBot(TOKEN)
 
 # Veri Yapıları
 slots = {i: "Boş" for i in range(1, 26)}  # 25 Slot
-user_slots = {}  # Hangi kullanıcı hangi slotu almış
-admin_states = {}  # Admin şifre giriş aşamaları
-registration_states = {}  # Takım adı kayıt aşamaları
+user_slots = {}  # user_id -> slot_num
+user_teams = {}  # user_id -> team_name
+admin_states = {}  # user_id -> state
+registration_states = {}  # user_id -> slot_num
+
+# Turnuva Oda Bilgileri (Admin belirleyecek)
+tournament_room = {
+    "room_id": "Henüz belirlenmedi",
+    "room_pass": "Henüz belirlenmedi"
+}
 
 
 # Kanal Abonelik Kontrolü
@@ -53,6 +60,24 @@ def check_sub(user_id):
     except Exception:
         pass
     return False
+
+
+# --- ANA MENÜ ---
+def show_main_menu(chat_id):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("🏆 Slot Tablosu", callback_data="show_slots"),
+        types.InlineKeyboardButton("👤 Profilim", callback_data="show_profile")
+    )
+    
+    bot.send_message(
+        chat_id,
+        "🔥 **WEX ESPORTS TURNUVA MERKEZİ** 🔥\n\n"
+        "🏆 *Mücadele başlasın, kazanan inatçı savaşçı olsun!*\n"
+        "Aşağıdaki menüden işlem yapabilirsin. 🚀",
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
 
 
 # --- 1. /start KOMUTU ---
@@ -78,20 +103,6 @@ def send_welcome(message):
     show_main_menu(message.chat.id)
 
 
-def show_main_menu(chat_id):
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("🏆 Canlı Slot Tablosu & Kayıt", callback_data="show_slots"))
-    
-    bot.send_message(
-        chat_id,
-        "🔥 **WEX ESPORTS TURNUVA MERKEZİ** 🔥\n\n"
-        "🏆 *Mücadele başlasın, kazanan inatçı savaşçı olsun!*\n"
-        "Aşağıdaki butona tıklayarak slot seçebilirsin. 🚀",
-        parse_mode="Markdown",
-        reply_markup=markup
-    )
-
-
 # Abonelik Kontrol Butonu
 @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
 def callback_check_sub(call):
@@ -106,7 +117,7 @@ def callback_check_sub(call):
         bot.answer_callback_query(call.id, "Henüz kanala katılmamışsın!", show_alert=True)
 
 
-# --- 2. /admin KOMUTU (Kesinlikle şifre ister) ---
+# --- 2. /admin KOMUTU ---
 @bot.message_handler(commands=['admin'])
 def admin_login(message):
     admin_states[message.from_user.id] = "waiting_password"
@@ -117,7 +128,39 @@ def admin_login(message):
     )
 
 
-# --- 3. SLOT TABLOSU GÖRÜNÜMÜ ---
+# --- 3. PROFİL GÖRÜNTÜLEME ---
+@bot.callback_query_handler(func=lambda call: call.data == "show_profile")
+def callback_show_profile(call):
+    user_id = call.from_user.id
+    
+    if user_id not in user_slots:
+        profile_text = (
+            "👤 **OYUNCU PROFİLİ**\n\n"
+            "❌ Aktif bir slot kaydın bulunmuyor.\n\n"
+            "🔑 **Oda ID:** Belirlenmedi\n"
+            "🔒 **Oda Şifresi:** Belirlenmedi"
+        )
+    else:
+        slot_num = user_slots[user_id]
+        team_name = user_teams.get(user_id, "Bilinmeyen Takım")
+        profile_text = (
+            "👤 **OYUNCU PROFİLİ**\n\n"
+            f"🏆 **Takım Adı:** `{team_name}`\n"
+            f"📍 **Kayıtlı Slot:** `{slot_num}. Slot`\n\n"
+            f"🔑 **Oda ID:** `{tournament_room['room_id']}`\n"
+            f"🔒 **Oda Şifresi:** `{tournament_room['room_pass']}`"
+        )
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🔙 Ana Menü", callback_data="main_menu"))
+
+    try:
+        bot.edit_message_text(profile_text, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+    except:
+        bot.send_message(call.message.chat.id, profile_text, parse_mode="Markdown", reply_markup=markup)
+
+
+# --- 4. SLOT TABLOSU ---
 @bot.callback_query_handler(func=lambda call: call.data == "show_slots")
 def callback_show_slots(call):
     markup = types.InlineKeyboardMarkup(row_width=5)
@@ -140,13 +183,7 @@ def callback_show_slots(call):
     table_text += "\n*(Kayıt olmak için boş bir slota tıklayabilirsin!)*"
 
     try:
-        bot.edit_message_text(
-            table_text,
-            call.message.chat.id,
-            call.message.message_id,
-            parse_mode="Markdown",
-            reply_markup=markup
-        )
+        bot.edit_message_text(table_text, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     except:
         bot.send_message(call.message.chat.id, table_text, parse_mode="Markdown", reply_markup=markup)
 
@@ -162,7 +199,7 @@ def callback_select_slot(call):
         return
 
     if slots[slot_num] != "Boş":
-        bot.answer_callback_query(call.id, "Bu slot maalesef dolu, başka bir tane seç!", show_alert=True)
+        bot.answer_callback_query(call.id, "Bu slot maalesef dolu!", show_alert=True)
         return
 
     registration_states[user_id] = slot_num
@@ -180,7 +217,7 @@ def callback_select_slot(call):
     bot.answer_callback_query(call.id)
 
 
-# --- 4. METİN MESAJI YÖNETİCİSİ ---
+# --- 5. MESAJ YÖNETİCİSİ (Şifre, Takım Adı, Admin Oda Bilgisi) ---
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     user_id = message.from_user.id
@@ -191,8 +228,10 @@ def handle_all_messages(message):
         if text == ADMIN_PASSWORD:
             admin_states[user_id] = "logged_in"
             markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("🔑 Oda ID & Şifre Belirle", callback_data="admin_set_room"))
             markup.add(types.InlineKeyboardButton("🔄 Turnuvayı Sıfırla", callback_data="admin_reset"))
             markup.add(types.InlineKeyboardButton("⏳ Geri Sayım Başlat", callback_data="admin_countdown"))
+            markup.add(types.InlineKeyboardButton("🔙 Ana Menü", callback_data="main_menu"))
             
             bot.send_message(
                 message.chat.id,
@@ -205,7 +244,44 @@ def handle_all_messages(message):
             admin_states.pop(user_id, None)
         return
 
-    # B) Takım Adı Kayıt Kontrolü
+    # B) Admin Oda Bilgisi Girişi (ID ve Şifre)
+    if user_id in admin_states and admin_states[user_id] == "waiting_room_info":
+        parts = text.split()
+        if len(parts) < 2:
+            bot.send_message(message.chat.id, "⚠️ Lütfen hem Oda ID hem de Şifre girin!\nÖrnek format: `1234567 şifre123`", parse_mode="Markdown")
+            return
+        
+        room_id = parts[0]
+        room_pass = parts[1]
+        
+        tournament_room["room_id"] = room_id
+        tournament_room["room_pass"] = room_pass
+        admin_states[user_id] = "logged_in"
+
+        bot.send_message(
+            message.chat.id,
+            f"✅ **Oda Bilgileri Güncellendi!**\n🔑 ID: `{room_id}`\n🔒 Şifre: `{room_pass}`\n\n*Slot alan tüm kullanıcılara bildirim gönderiliyor...*",
+            parse_mode="Markdown"
+        )
+
+        # Slot alan herkese toplu bildirim gönder
+        for uid in list(user_slots.keys()):
+            try:
+                bot.send_message(
+                    uid,
+                    "🚨 **TURNUVA ODA BİLGİLERİ YAYINLANDI!** 🚨\n\n"
+                    f"🔑 **Oda ID:** `{room_id}`\n"
+                    f"🔒 **Oda Şifresi:** `{room_pass}`\n\n"
+                    "Hadi savaş alanına! 🏆",
+                    parse_mode="Markdown"
+                )
+            except:
+                pass
+        
+        show_main_menu(message.chat.id)
+        return
+
+    # C) Takım Adı Kayıt Kontrolü
     if user_id in registration_states:
         slot_num = registration_states[user_id]
         team_name = text if text else "Bilinmeyen Takım"
@@ -213,89 +289,4 @@ def handle_all_messages(message):
         if slots[slot_num] != "Boş":
             del registration_states[user_id]
             bot.send_message(message.chat.id, "❌ Üzgünüm, bu slot siz yazana kadar başkası tarafından alındı!")
-            show_main_menu(message.chat.id)
-            return
-
-        slots[slot_num] = team_name
-        user_slots[user_id] = slot_num
-        del registration_states[user_id]
-
-        bot.send_message(
-            message.chat.id,
-            f"✅ **BAŞARILI!**\n\n"
-            f"🏆 **Takım:** `{team_name}`\n"
-            f"📍 **Seçilen Slot:** `{slot_num}. Slot`\n\n"
-            "Bol şans dileriz! 🔥",
-            parse_mode="Markdown"
-        )
-        show_main_menu(message.chat.id)
-        return
-
-
-# Slot İptal Etme
-@bot.callback_query_handler(func=lambda call: call.data == "cancel_my_slot")
-def callback_cancel_slot(call):
-    user_id = call.from_user.id
-    if user_id not in user_slots:
-        bot.answer_callback_query(call.id, "Aktif bir slot kaydın bulunmuyor!", show_alert=True)
-        return
-
-    slot_num = user_slots[user_id]
-    slots[slot_num] = "Boş"
-    del user_slots[user_id]
-
-    bot.answer_callback_query(call.id, f"{slot_num}. slot üzerindeki kaydın iptal edildi.")
-    callback_show_slots(call)
-
-
-# Ana Menüye Dönüş
-@bot.callback_query_handler(func=lambda call: call.data == "main_menu")
-def callback_main_menu(call):
-    try:
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-    except:
-        pass
-    show_main_menu(call.message.chat.id)
-
-
-# Admin: Turnuvayı Sıfırlama
-@bot.callback_query_handler(func=lambda call: call.data == "admin_reset")
-def admin_reset_tournament(call):
-    if admin_states.get(call.from_user.id) != "logged_in":
-        return
-
-    global slots, user_slots
-    slots = {i: "Boş" for i in range(1, 26)}
-    user_slots.clear()
-
-    bot.answer_callback_query(call.id, "Turnuva başarıyla sıfırlandı!")
-    bot.send_message(call.message.chat.id, "🔄 **Sistem Bilgisi:** Tüm slotlar temizlendi!")
-
-
-# Admin: Geri Sayım Sayacı Başlatma
-@bot.callback_query_handler(func=lambda call: call.data == "admin_countdown")
-def admin_start_countdown(call):
-    if admin_states.get(call.from_user.id) != "logged_in":
-        return
-
-    bot.answer_callback_query(call.id, "Geri sayım başlatıldı!")
-    msg = bot.send_message(call.message.chat.id, "⏳ **TURNUVAYA KALAN SÜRE**\n\nBaşlangıç: **10 saniye** kaldı! 🚀", parse_mode="Markdown")
-    
-    for i in range(9, 0, -1):
-        time.sleep(1)
-        try:
-            bot.edit_message_text(f"⏳ **TURNUVAYA KALAN SÜRE**\n\nBaşlangıç: **{i} saniye** kaldı! 🚀", call.message.chat.id, msg.message_id, parse_mode="Markdown")
-        except:
-            pass
-
-    time.sleep(1)
-    try:
-        bot.edit_message_text("🚨 **START! START! START!**\n\n🔥 Turnuva başlamıştır!", call.message.chat.id, msg.message_id, parse_mode="Markdown")
-    except:
-        pass
-
-
-if __name__ == "__main__":
-    keep_alive()
-    print("WEX Event Bot aktif ve çalışıyor...")
-    bot.infinity_polling()
+            show_main_menu(message.chat
