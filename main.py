@@ -45,7 +45,9 @@ def s_klavye():
     return InlineKeyboardMarkup(kb)
 
 def a_klavye():
+    durum_txt = "🟢 Turnuva: AÇIK" if t_aktif else "🔴 Turnuva: KAPALI"
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton(durum_txt, callback_data="a_toggle_turnuva")],
         [InlineKeyboardButton(f"⏳ Saat: {saat_yaz(t_saat)}", callback_data="bos")],
         [InlineKeyboardButton("➖ 30dk", callback_data="a_eksi"), InlineKeyboardButton("➕ 30dk", callback_data="a_arti")],
         [InlineKeyboardButton("🔑 Oda ID & Şifre Gir", callback_data="a_oda")],
@@ -61,6 +63,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kullanicilar.add(uid)
     durumlar.pop(uid, None)
     
+    if not t_aktif:
+        msg = "❌ Şu anda aktif bir turnuva yok."
+        if update.callback_query:
+            await update.callback_query.message.edit_text(msg)
+        else:
+            await update.message.reply_text(msg)
+        return
+
     msg = (
         "🔥 WEX ESPORTS TURNUVA MERKEZİNE HOŞ GELDİN! 🔥\n\n"
         "🏆 Mücadele başlasın, kazanan inatçı savaşçı olsun!\n"
@@ -117,11 +127,14 @@ async def buton(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.message.edit_text("⚠️ Aktif kaydınız yok.", reply_markup=m_menu())
         
     elif data.startswith("a_"):
-        if data == "a_sifirla":
+        if data == "a_toggle_turnuva":
+            t_aktif = not t_aktif
+            await q.message.edit_text("👑 Admin Paneli:", reply_markup=a_klavye())
+        elif data == "a_sifirla":
             for no in slotlar: slotlar[no] = {"durum": "Boş", "takim": "-", "user_id": None}
-            oda_id, oda_sifre, t_aktif, t_saat = "-", "-", False, 1200
+            oda_id, oda_sifre = "-", "-"
             bildirimler.clear()
-            await q.message.edit_text("🔄 Sıfırlandı!", reply_markup=a_klavye())
+            await q.message.edit_text("🔄 Slotlar sıfırlandı!", reply_markup=a_klavye())
         elif data == "a_arti":
             t_saat = (t_saat + 30) % 1440
             await q.message.edit_text("👑 Admin Paneli:", reply_markup=a_klavye())
