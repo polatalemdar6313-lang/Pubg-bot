@@ -69,10 +69,8 @@ def set_setting(key, value):
     cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
     conn.commit()
 
-# Kullanıcı geçici durum hafızası (Memory State)
 user_states = {}
 
-# --- ANA MENÜ ---
 def main_menu_keyboard():
     keyboard = [
         [
@@ -98,7 +96,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif update.callback_query:
         await update.callback_query.message.edit_text(text, parse_mode="Markdown", reply_markup=main_menu_keyboard())
 
-# --- SLOT & TABLO İŞLEMLERİ ---
 async def show_slots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -162,7 +159,6 @@ async def slot_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 İptal", callback_data="menu_slots")]]),
         )
 
-# --- PROFİL EKRANI ---
 async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -196,7 +192,6 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Ana Menü", callback_data="main_menu")]]),
     )
 
-# --- ADMİNE MESAJ ---
 async def ask_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -209,7 +204,6 @@ async def ask_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 İptal", callback_data="main_menu")]]),
     )
 
-# --- ADMIN PANELİ ---
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_states[user.id] = "WAITING_ADMIN_PASSWORD"
@@ -248,7 +242,6 @@ async def open_admin_panel_query(query):
     ]
     await query.message.edit_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# --- MESAJ YÖNETİCİSİ ---
 async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text
@@ -288,3 +281,96 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
     if state == "WAITING_ROOM_INFO":
         user_states[user.id] = "IDLE"
         parts = text.split(",")
+        if len(parts) == 2:
+            r_id = parts[0].strip()
+            r_pass = parts[1].strip()
+            set_setting("room_id", r_id)
+            set_setting("room_pass", r_pass)
+            await update.message.reply_text(f"✅ Oda bilgileri güncellendi!\nID: `{r_id}` | Şifre: `{r_pass}`", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("❌ Hatalı format! Şöyle yazın: `OdaID, Sifre`")
+        return
+
+    await update.message.reply_text("Lütfen menüyü kullanın 👇", reply_markup=main_menu_keyboard())
+
+async def admin_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+
+    if data == "main_menu":
+        await start(update, context)
+        return
+
+    if data == "menu_slots":
+        await show_slots(update, context)
+    elif data == "menu_profile":
+        await show_profile(update, context)
+    elif data == "menu_msg":
+        await ask_admin_message(update, context)
+    elif data.startswith("slot_select_") or data.startswith("slot_full_"):
+        await slot_click(update, context)
+        return
+
+    elif data == "adm_toggle_mode":
+        current_mode = get_setting("mode")
+        new_mode = "ÜCRETLİ" if current_mode == "BEDAVA" else "BEDAVA"
+        set_setting("mode", new_mode)
+        set_setting("fee", "50 TL" if new_mode == "ÜCRETLİ" else "0 TL")
+        await query.answer(f"Mod: {new_mode}", show_alert=True)
+        await open_admin_panel_query(query)
+
+    elif data == "adm_set_room":
+        user_states[query.from_user.id] = "WAITING_ROOM_INFO"
+        await query.message.edit_text(
+            "🔑 Yeni Oda ID ve Şifreyi araya virgül koyarak yazın:\n*Örnek:* `12345, 6789`",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Geri", callback_data="adm_panel_back")]]),
+        )
+
+    elif data == "adm_reset_all":
+        cursor.execute("UPDATE slots SET user_id = NULL, username = NULL, team_name = NULL")
+        set_setting("room_id", "Henüz verilmedi")
+        set_setting("room_pass", "Henüz verilmedi")
+        conn.commit()
+        await query.answer("Turnuva sıfırlandı!", show_alert=True)
+        await open_admin_panel_query(query)
+
+    elif data == "adm_del_slot_menu":
+        cursor.execute("SELECT slot_id, team_name FROM slots WHERE team_name IS NOT NULL")
+        rows = cursor.fetchall()
+        if not rows:
+            await query.answer("Dolu slot yok!", show_alert=True)
+            return
+        keyboard = [[InlineKeyboardButton(f"Sil: {s_id}. Slot ({t_name})", callback_data=f"adm_del_{s_id}")] for s_id, t_name in rows]
+        keyboard.append([InlineKeyboardButton("🔙 Geri", callback_data="adm_panel_back")])
+        await query.message.edit_text("🗑️ Silmek istediğiniz slotu seçin:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("adm_del_"):
+        slot_id = data.split("_")[2]
+        cursor.execute("UPDATE slots SET user_id = NULL, username = NULL, team_name = NULL WHERE slot_id = ?", (slot_id,))
+        conn.commit()
+        await query.answer(f"{slot_id}. slot boşaltıldı!", show_alert=True)
+        await open_admin_panel_query(query)
+
+    elif data == "adm_view_msgs":
+        cursor.execute("SELECT username, text FROM messages ORDER BY id DESC LIMIT 10")
+        rows = cursor.fetchall()
+        msg_text = "📥 **Son Mesajlar:**\n\n" + ("\n".join([f"👤 @{u}: {t}" for u, t in rows]) if rows else "Hiç mesaj yok.")
+        await query.message.edit_text(msg_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Geri", callback_data="adm_panel_back")]]))
+
+    elif data == "adm_panel_back":
+        await open_admin_panel_query(query)
+
+def main():
+    application = ApplicationBuilder().token(TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("admin", admin_command))
+    application.add_handler(CallbackQueryHandler(admin_callbacks))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_messages))
+
+    print("Bot aktif!")
+    application.run_polling()
+
+if __name__ == "__main__":
+    main()
