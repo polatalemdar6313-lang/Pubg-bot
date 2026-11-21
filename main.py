@@ -1,5 +1,6 @@
 import sys
 import subprocess
+import os
 
 # Kütüphane otomatik yükleyici
 try:
@@ -13,7 +14,7 @@ import time
 from flask import Flask
 from threading import Thread
 
-# Render'ın servisi kapatmaması için mini web sunucusu
+# Render port uyumlu mini web sunucusu
 app = Flask('')
 
 @app.route('/')
@@ -21,10 +22,12 @@ def home():
     return "WEX Bot Aktif ve Çalışıyor! 🚀"
 
 def run_web():
-    app.run(host='0.0.0.0', port=8080)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
     t = Thread(target=run_web)
+    t.daemon = True
     t.start()
 
 # Token ve Kanal Bilgileri
@@ -114,7 +117,7 @@ def admin_login(message):
     )
 
 
-# --- 3. SLOT TABLOSU GÖRÜNÜMÜ (Temiz Arayüz) ---
+# --- 3. SLOT TABLOSU GÖRÜNÜMÜ ---
 @bot.callback_query_handler(func=lambda call: call.data == "show_slots")
 def callback_show_slots(call):
     markup = types.InlineKeyboardMarkup(row_width=5)
@@ -152,4 +155,147 @@ def callback_show_slots(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith("slot_"))
 def callback_select_slot(call):
     slot_num = int(call.data.split("_")[1])
-    user_
+    user_id = call.from_user.id
+
+    if user_id in user_slots:
+        bot.answer_callback_query(call.id, f"Zaten {user_slots[user_id]}. slotta kaydın var!", show_alert=True)
+        return
+
+    if slots[slot_num] != "Boş":
+        bot.answer_callback_query(call.id, "Bu slot maalesef dolu, başka bir tane seç!", show_alert=True)
+        return
+
+    registration_states[user_id] = slot_num
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("❌ İptal Et", callback_data="show_slots"))
+
+    bot.send_message(
+        call.message.chat.id,
+        f"🎯 **{slot_num}. Slot** seçildi.\n\n"
+        "Lütfen katılacak **Takım Adını** mesaj olarak yaz:",
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+    bot.answer_callback_query(call.id)
+
+
+# --- 4. METİN MESAJI YÖNETİCİSİ ---
+@bot.message_handler(func=lambda message: True)
+def handle_all_messages(message):
+    user_id = message.from_user.id
+    text = message.text.strip() if message.text else ""
+
+    # A) Admin Şifre Kontrolü
+    if user_id in admin_states and admin_states[user_id] == "waiting_password":
+        if text == ADMIN_PASSWORD:
+            admin_states[user_id] = "logged_in"
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("🔄 Turnuvayı Sıfırla", callback_data="admin_reset"))
+            markup.add(types.InlineKeyboardButton("⏳ Geri Sayım Başlat", callback_data="admin_countdown"))
+            
+            bot.send_message(
+                message.chat.id,
+                "👑 **ADMİN PANELİNE HOŞ GELDİNİZ**\n\nYönetmek istediğiniz işlemi seçin:",
+                parse_mode="Markdown",
+                reply_markup=markup
+            )
+        else:
+            bot.send_message(message.chat.id, "❌ Hatalı şifre! Tekrar /admin yazarak deneyebilirsin.")
+            admin_states.pop(user_id, None)
+        return
+
+    # B) Takım Adı Kayıt Kontrolü
+    if user_id in registration_states:
+        slot_num = registration_states[user_id]
+        team_name = text if text else "Bilinmeyen Takım"
+
+        if slots[slot_num] != "Boş":
+            del registration_states[user_id]
+            bot.send_message(message.chat.id, "❌ Üzgünüm, bu slot siz yazana kadar başkası tarafından alındı!")
+            show_main_menu(message.chat.id)
+            return
+
+        slots[slot_num] = team_name
+        user_slots[user_id] = slot_num
+        del registration_states[user_id]
+
+        bot.send_message(
+            message.chat.id,
+            f"✅ **BAŞARILI!**\n\n"
+            f"🏆 **Takım:** `{team_name}`\n"
+            f"📍 **Seçilen Slot:** `{slot_num}. Slot`\n\n"
+            "Bol şans dileriz! 🔥",
+            parse_mode="Markdown"
+        )
+        show_main_menu(message.chat.id)
+        return
+
+
+# Slot İptal Etme
+@bot.callback_query_handler(func=lambda call: call.data == "cancel_my_slot")
+def callback_cancel_slot(call):
+    user_id = call.from_user.id
+    if user_id not in user_slots:
+        bot.answer_callback_query(call.id, "Aktif bir slot kaydın bulunmuyor!", show_alert=True)
+        return
+
+    slot_num = user_slots[user_id]
+    slots[slot_num] = "Boş"
+    del user_slots[user_id]
+
+    bot.answer_callback_query(call.id, f"{slot_num}. slot üzerindeki kaydın iptal edildi.")
+    callback_show_slots(call)
+
+
+# Ana Menüye Dönüş
+@bot.callback_query_handler(func=lambda call: call.data == "main_menu")
+def callback_main_menu(call):
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except:
+        pass
+    show_main_menu(call.message.chat.id)
+
+
+# Admin: Turnuvayı Sıfırlama
+@bot.callback_query_handler(func=lambda call: call.data == "admin_reset")
+def admin_reset_tournament(call):
+    if admin_states.get(call.from_user.id) != "logged_in":
+        return
+
+    global slots, user_slots
+    slots = {i: "Boş" for i in range(1, 26)}
+    user_slots.clear()
+
+    bot.answer_callback_query(call.id, "Turnuva başarıyla sıfırlandı!")
+    bot.send_message(call.message.chat.id, "🔄 **Sistem Bilgisi:** Tüm slotlar temizlendi!")
+
+
+# Admin: Geri Sayım Sayacı Başlatma
+@bot.callback_query_handler(func=lambda call: call.data == "admin_countdown")
+def admin_start_countdown(call):
+    if admin_states.get(call.from_user.id) != "logged_in":
+        return
+
+    bot.answer_callback_query(call.id, "Geri sayım başlatıldı!")
+    msg = bot.send_message(call.message.chat.id, "⏳ **TURNUVAYA KALAN SÜRE**\n\nBaşlangıç: **10 saniye** kaldı! 🚀", parse_mode="Markdown")
+    
+    for i in range(9, 0, -1):
+        time.sleep(1)
+        try:
+            bot.edit_message_text(f"⏳ **TURNUVAYA KALAN SÜRE**\n\nBaşlangıç: **{i} saniye** kaldı! 🚀", call.message.chat.id, msg.message_id, parse_mode="Markdown")
+        except:
+            pass
+
+    time.sleep(1)
+    try:
+        bot.edit_message_text("🚨 **START! START! START!**\n\n🔥 Turnuva başlamıştır!", call.message.chat.id, msg.message_id, parse_mode="Markdown")
+    except:
+        pass
+
+
+if __name__ == "__main__":
+    keep_alive()
+    print("WEX Event Bot aktif ve çalışıyor...")
+    bot.infinity_polling()
