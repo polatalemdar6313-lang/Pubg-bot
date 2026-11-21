@@ -52,18 +52,7 @@ def check_sub(user_id):
     return False
 
 
-# --- ADMIN KOMUTU (En üstte olmalı ki takılmasın) ---
-@bot.message_handler(commands=['admin'])
-def admin_login(message):
-    admin_states[message.from_user.id] = "waiting_password"
-    bot.send_message(
-        message.chat.id,
-        "🔐 **ADMİN GİRİŞİ**\n\nLütfen admin şifresini gir:",
-        parse_mode="Markdown"
-    )
-
-
-# Ana Menü (Start Komutu)
+# --- 1. /start KOMUTU ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.from_user.id
@@ -88,13 +77,13 @@ def send_welcome(message):
 
 def show_main_menu(chat_id):
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("🏆 Slot Tablosu & Kayıt Ol", callback_data="show_slots"))
+    markup.add(types.InlineKeyboardButton("🏆 Canlı Slot Tablosu & Kayıt", callback_data="show_slots"))
     
     bot.send_message(
         chat_id,
-        "🔥 **WEX ESPORTS TURNUVA MERKEZİNE HOŞ GELDİN!** 🔥\n\n"
+        "🔥 **WEX ESPORTS TURNUVA MERKEZİ** 🔥\n\n"
         "🏆 *Mücadele başlasın, kazanan inatçı savaşçı olsun!*\n"
-        "Aşağıdaki butonu kullanarak slot seçebilir ve heyecana ortak olabilirsin. 🚀",
+        "Aşağıdaki butona tıklayarak slot seçebilirsin. 🚀",
         parse_mode="Markdown",
         reply_markup=markup
     )
@@ -114,7 +103,18 @@ def callback_check_sub(call):
         bot.answer_callback_query(call.id, "Henüz kanala katılmamışsın!", show_alert=True)
 
 
-# Slot Tablosu ve Kayıt Paneli
+# --- 2. /admin KOMUTU (Kesinlikle şifre ister) ---
+@bot.message_handler(commands=['admin'])
+def admin_login(message):
+    admin_states[message.from_user.id] = "waiting_password"
+    bot.send_message(
+        message.chat.id,
+        "🔐 **ADMİN GİRİŞİ**\n\nLütfen admin şifresini gir:",
+        parse_mode="Markdown"
+    )
+
+
+# --- 3. SLOT TABLOSU GÖRÜNÜMÜ (Temiz Arayüz) ---
 @bot.callback_query_handler(func=lambda call: call.data == "show_slots")
 def callback_show_slots(call):
     markup = types.InlineKeyboardMarkup(row_width=5)
@@ -122,13 +122,13 @@ def callback_show_slots(call):
     buttons = []
     for i in range(1, 26):
         status = "🟢" if slots[i] == "Boş" else "🔴"
-        buttons.append(types.InlineKeyboardButton(f"{i}. Slot {status}", callback_data=f"slot_{i}"))
+        buttons.append(types.InlineKeyboardButton(f"{i} {status}", callback_data=f"slot_{i}"))
     
     markup.add(*buttons)
     markup.add(types.InlineKeyboardButton("❌ Slotumu İptal Et", callback_data="cancel_my_slot"))
     markup.add(types.InlineKeyboardButton("🔙 Ana Menü", callback_data="main_menu"))
 
-    table_text = "🎯 **CANLI SLOT TABLOSU** 🎯\n\n"
+    table_text = "🎯 **WEX ESPORTS - 25 KİŞİLİK SLOT LİSTESİ** 🎯\n\n"
     for i in range(1, 26):
         team_name = slots[i]
         icon = "🟩" if team_name == "Boş" else "🟥"
@@ -148,94 +148,8 @@ def callback_show_slots(call):
         bot.send_message(call.message.chat.id, table_text, parse_mode="Markdown", reply_markup=markup)
 
 
-# Slot Seçme ve Takım Adı İsteme
+# Slot Seçme
 @bot.callback_query_handler(func=lambda call: call.data.startswith("slot_"))
 def callback_select_slot(call):
     slot_num = int(call.data.split("_")[1])
-    user_id = call.from_user.id
-
-    if user_id in user_slots:
-        bot.answer_callback_query(call.id, f"Zaten {user_slots[user_id]}. slotta kaydın var!", show_alert=True)
-        return
-
-    if slots[slot_num] != "Boş":
-        bot.answer_callback_query(call.id, "Bu slot maalesef dolu, başka bir tane seç!", show_alert=True)
-        return
-
-    registration_states[user_id] = slot_num
-    
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("❌ İptal Et", callback_data="show_slots"))
-
-    bot.send_message(
-        call.message.chat.id,
-        f"🎯 **{slot_num}. Slot** için işlem yapıyorsun.\n\n"
-        "Lütfen katılacak **Takım Adını** mesaj olarak yaz gönder:",
-        parse_mode="Markdown",
-        reply_markup=markup
-    )
-    bot.answer_callback_query(call.id)
-
-
-# Mesaj Yöneticisi (Takım Adı ve Admin Şifresi İçin)
-@bot.message_handler(func=lambda message: True)
-def handle_all_messages(message):
-    user_id = message.from_user.id
-    text = message.text.strip() if message.text else ""
-
-    # 1. Admin Şifre Kontrolü
-    if user_id in admin_states and admin_states[user_id] == "waiting_password":
-        if text == ADMIN_PASSWORD:
-            admin_states[user_id] = "logged_in"
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("🔄 Turnuvayı Sıfırla", callback_data="admin_reset"))
-            markup.add(types.InlineKeyboardButton("⏳ Geri Sayım Başlat", callback_data="admin_countdown"))
-            
-            bot.send_message(
-                message.chat.id,
-                "👑 **ADMİN PANELİNE HOŞ GELDİNİZ**\n\nYönetmek istediğiniz işlemi seçin:",
-                parse_mode="Markdown",
-                reply_markup=markup
-            )
-        else:
-            bot.send_message(message.chat.id, "❌ Hatalı şifre! Tekrar /admin yazarak deneyebilirsin.")
-            admin_states.pop(user_id, None)
-        return
-
-    # 2. Takım Adı Kayıt Kontrolü
-    if user_id in registration_states:
-        slot_num = registration_states[user_id]
-        team_name = text if text else "Bilinmeyen Takım"
-
-        if slots[slot_num] != "Boş":
-            del registration_states[user_id]
-            bot.send_message(message.chat.id, "❌ Üzgünüm, bu slot siz yazana kadar başkası tarafından alındı! Lütfen başka bir slot seçin.")
-            show_main_menu(message.chat.id)
-            return
-
-        slots[slot_num] = team_name
-        user_slots[user_id] = slot_num
-        del registration_states[user_id]
-
-        bot.send_message(
-            message.chat.id,
-            f"✅ **BAŞARILI!**\n\n"
-            f"🏆 **Takım:** `{team_name}`\n"
-            f"📍 **Seçilen Slot:** `{slot_num}. Slot`\n\n"
-            "Bol şans dileriz! Savaş alanında görüşmek üzere. 🔥",
-            parse_mode="Markdown"
-        )
-        show_main_menu(message.chat.id)
-        return
-
-
-# Slot İptal Etme
-@bot.callback_query_handler(func=lambda call: call.data == "cancel_my_slot")
-def callback_cancel_slot(call):
-    user_id = call.from_user.id
-    if user_id not in user_slots:
-        bot.answer_callback_query(call.id, "Aktif bir slot kaydın bulunmuyor!", show_alert=True)
-        return
-
-    slot_num = user_slots[user_id]
-    slots[slot_num]
+    user_
